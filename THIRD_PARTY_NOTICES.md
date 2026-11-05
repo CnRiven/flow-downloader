@@ -4,7 +4,7 @@ Flow (拾流) application code is licensed under GPL-3.0-or-later. See LICENSE.
 
 ## macOS
 
-This build launches locally installed programs. No yt-dlp, FFmpeg, Deno, Python or Homebrew binaries are bundled in the app.
+No yt-dlp, FFmpeg, Deno, Python or Homebrew binaries are bundled in the app. Since macOS 1.0.2, the app automatically installs the official `yt-dlp_macos` standalone release into the current user's Application Support directory when a working engine is missing. The download is verified against SHA2-256SUMS from the exact same official release and checked with `--version` before activation. The official PyInstaller standalone includes its own Python runtime and follows the upstream combined-work GPLv3+ terms; see the release-specific THIRD_PARTY_LICENSES.txt and source links at https://github.com/yt-dlp/yt-dlp/releases .
 
 - yt-dlp: https://github.com/yt-dlp/yt-dlp — source distributed under the Unlicense; standalone release licensing varies with bundled dependencies.
 - FFmpeg: https://ffmpeg.org/legal.html — LGPL/GPL depending on build options.

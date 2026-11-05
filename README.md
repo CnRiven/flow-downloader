@@ -21,9 +21,17 @@
 | 平台 | 安装包 | 说明 |
 | --- | --- | --- |
 | Android | [下载 1.0.1 APK](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.1/Flow-Android-1.0.1-debug.apk) | Android 10+；测试签名，可覆盖安装之前的测试版 |
-| macOS | [下载 1.0.0 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.1/Flow-macOS-1.0.0-arm64.zip) | Apple Silicon，macOS 13+；解压后打开「拾流.app」 |
+| macOS | [下载 1.0.2 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.2/Flow-macOS-1.0.2-arm64.zip) | Apple Silicon，macOS 13+；缺少 yt-dlp 时自动安装 |
 
-[完整发布说明、项目源码与 SHA-256 校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。这是预览版；macOS 应用尚未进行 Apple 公证，下载引擎依赖需要按下文安装。
+[Mac 1.0.2 发布说明、源码与校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.2) · [Android 1.0.1 发布说明](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。安装包为预览版，macOS 应用尚未进行 Apple 公证。
+
+## macOS 1.0.2：自动安装下载引擎
+
+首次启动会检测可运行的 yt-dlp；如果没有安装，或现有安装无法运行，拾流会自动从 yt-dlp 官方 GitHub 发布下载 macOS 独立引擎。无需先安装 Homebrew、Python 或输入管理员密码，也不需要 GitHub 登录。
+
+引擎保存在 `~/Library/Application Support/Flow/engines/bin/yt-dlp`，优先使用这个路径。安装会显示进度，校验 SHA-256 并运行版本检查；失败或取消不会覆盖原有可用引擎。可以在偏好设置中重试、更新或修复。安装期间发起的解析或加入队列操作，会在引擎就绪后继续。
+
+首次安装需要访问 GitHub。FFmpeg 和 Deno 仍是独立的可选组件：缺少 FFmpeg 时，视频优先选择带声音的单文件格式；MP3 转换、分离音视频合并仍需 FFmpeg，部分 YouTube 功能需要 Deno。
 
 ## 获取项目
 
@@ -52,10 +60,10 @@ cd flow-downloader
 - macOS：打开 `dist/拾流.app`，或解压 `dist/Flow-macOS.zip` 后拖到「应用程序」。当前构建为 **Apple Silicon / macOS 13+**。
 - Android：安装 `dist/Flow-Android-1.0.1-debug.apk`（`dist/Flow-Android-debug.apk` 同步为最新版）。支持 **Android 10+**，包含 arm64-v8a、armeabi-v7a、x86_64。此为开发测试包，非商店发布版。
 
-macOS 版本使用本机的 yt-dlp、FFmpeg 和 Deno。可在设置里查看检测结果，缺失时安装：
+macOS 版本会自动准备 yt-dlp，也可识别本机已有的安装。需要合并音视频、提取 MP3 或完整 YouTube 脚本支持时，可安装可选组件：
 
 ```sh
-brew install yt-dlp ffmpeg deno
+brew install ffmpeg deno
 ```
 
 macOS 包使用本地临时签名，尚未进行 Apple Developer ID 签名、公证。若系统拦截外部下载的应用，在系统设置的「隐私与安全性」中检查并允许打开。Android 包内含下载运行时，无需安装 Python 或 Termux。
@@ -77,7 +85,7 @@ macOS 默认保存到 `~/Downloads/拾流`，可更改目录；Android 保存到
 
 Mac 设置中可主动选择从 Safari、Chrome、Firefox 或 Edge 读取登录 Cookie，默认关闭；系统可能要求浏览器、钥匙串或文件访问权限。Cookie 交给本机 yt-dlp，界面不上传或存储 Cookie 文件。已排队任务保留创建时的浏览器选项，修改设置只影响新任务。Android 1.0.1 通过内置的官方抖音网页保存验证 Cookie，保存在应用私有目录，并仅用于抖音请求。
 
-Mac 用 Homebrew 更新引擎：`brew upgrade yt-dlp`；Android 在设置中选择「更新下载引擎」。原生 Android 运行时、FFmpeg 等组件随 APK 更新。
+Mac 在偏好设置中选择「更新 / 修复 yt-dlp」；如果选择维护 Homebrew 安装，也可运行 `brew upgrade yt-dlp`。Android 在设置中选择「更新下载引擎」。原生 Android 运行时、FFmpeg 等组件随 APK 更新。
 
 ## 构建 macOS
 
@@ -116,6 +124,8 @@ cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug
 自动检查还覆盖 URL 与命令参数安全、结构化进度、中文路径、大型元数据、错误输出、取消进程、损坏历史文件和任务恢复。集成测试会打断真实下载，验证 HTTP Range 续传和最终文件逐字节一致性。Mac 界面可运行并检查；Android 是否经过真机验证以交付说明为准，成功生成 APK 不等于已通过所有设备兼容性测试。
 
 Android 1.0.1 已在 Android 15 / arm64 模拟器中验证从旧版升级、保留历史、新版原生引擎执行、视频解析下载、MP3 转换和 MediaStore 导出。可在专用测试模拟器中运行 `scripts/android-smoke-test.py --adb /path/to/adb --port 5037 --legacy-apk /path/to/1.0.0.apk`。该脚本会覆盖安装应用并写入测试历史，请仅用于可丢弃的测试模拟器。
+
+Mac 自动安装检查覆盖校验失败、版本错误、非官方地址、路径穿越、取消、断网、重复校验记录以及已有安装保留。实际 GUI 检查在隔离数据目录、空的系统工具搜索路径中执行了首次启动、官方独立引擎安装、安装后继续解析和下载、再次启动复用引擎；还在仅包含 `/usr/bin:/bin` 的环境中验证了独立引擎无需外部 Python 即可运行。
 
 ## 项目结构
 

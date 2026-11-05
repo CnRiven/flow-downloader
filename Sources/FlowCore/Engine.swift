@@ -11,13 +11,24 @@ private final class MetadataCapture: @unchecked Sendable {
 }
 
 public struct EnginePaths {
+    public static var managedBinDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Flow/engines/bin", isDirectory: true)
+    }
     public let downloader: String?
     public let ffmpeg: String?
     public let runtime: String?
 
     public init(bundle: Bundle = .main) {
-        let directories = [bundle.resourcePath.map { $0 + "/bin" }, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
-            .compactMap { $0 } + (ProcessInfo.processInfo.environment["PATH"] ?? "").components(separatedBy: ":")
+        self.init(managedDirectory: Self.managedBinDirectory, searchDirectories:
+            [bundle.resourcePath.map { $0 + "/bin" }].compactMap { $0 }
+            + ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin",
+               NSHomeDirectory() + "/.local/bin", NSHomeDirectory() + "/.deno/bin", NSHomeDirectory() + "/bin"]
+            + (ProcessInfo.processInfo.environment["PATH"] ?? "").components(separatedBy: ":"))
+    }
+
+    public init(managedDirectory: URL, searchDirectories: [String]) {
+        let directories = [managedDirectory.path] + searchDirectories.filter { !$0.isEmpty }
         func find(_ name: String) -> String? {
             directories.map { $0 + "/" + name }.first { FileManager.default.isExecutableFile(atPath: $0) }
         }
@@ -153,7 +164,7 @@ public struct DownloadEngine {
             "--progress-template", "download:FLOW_PROGRESS:%(progress)j",
             "--print", "before_dl:FLOW_TITLE:%(title)j", "--print", "after_move:FLOW_FILE:%(filepath)j",
             "-P", "home:" + job.directory, "-P", "temp:" + work,
-            "-o", "%(title).160B [%(id)s].%(ext)s", "-f", job.quality.format
+            "-o", "%(title).160B [%(id)s].%(ext)s", "-f", paths.ffmpeg == nil ? job.quality.singleFileFormat : job.quality.format
         ]
         if job.quality == .audio { args += ["-x", "--audio-format", "mp3", "--audio-quality", "0"] }
         else if paths.ffmpeg != nil { args += ["--merge-output-format", "mp4/mkv"] }

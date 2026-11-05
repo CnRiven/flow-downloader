@@ -19,6 +19,14 @@ public enum Quality: String, Codable, CaseIterable, Identifiable {
         case .audio: return "bestaudio/best"
         }
     }
+    public var singleFileFormat: String {
+        switch self {
+        case .best: return "b"
+        case .hd1080: return "b[height<=?1080]"
+        case .hd720: return "b[height<=?720]"
+        case .audio: return "bestaudio/best"
+        }
+    }
 }
 
 public struct VideoInfo: Codable, Equatable {
@@ -81,7 +89,7 @@ public enum InputError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidURL: return "请粘贴完整的 http:// 或 https:// 视频链接。"
-        case .missingEngine: return "未找到 yt-dlp。请在设置中查看安装方法。"
+        case .missingEngine: return "下载引擎尚未就绪，请在应用内重试安装。"
         case .processFailed(let message): return message
         case .missingOutput: return "下载引擎已退出，但没有找到输出文件。请查看任务日志。"
         }

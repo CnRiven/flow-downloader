@@ -26,11 +26,15 @@ private final class Events: @unchecked Sendable {
         try historyRecovery(); print("PASS history recovery and corruption handling")
         try await metadataAndFailure(); print("PASS large metadata and subprocess failure")
         try await cancellation(); print("PASS cancellation before launch and while running")
+        try await InstallerChecks.run()
         if let url = ProcessInfo.processInfo.environment["FLOW_INTEGRATION_URL"] {
             try await realDownload(url); print("PASS real yt-dlp video download and FFmpeg MP3 conversion")
         }
         if let url = ProcessInfo.processInfo.environment["FLOW_RESUME_URL"], let fixture = ProcessInfo.processInfo.environment["FLOW_RESUME_FIXTURE"] {
             try await realResume(url, fixture: fixture); print("PASS real download interruption and HTTP Range resume, byte-for-byte output")
+        }
+        if let directory = ProcessInfo.processInfo.environment["FLOW_REAL_ENGINE_INSTALL_ROOT"] {
+            try await InstallerChecks.realInstallation(in: URL(fileURLWithPath: directory), fixtureURL: ProcessInfo.processInfo.environment["FLOW_INTEGRATION_URL"])
         }
         print("All checks passed.")
     }

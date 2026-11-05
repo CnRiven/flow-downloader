@@ -33,6 +33,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
                         intro
+                        EngineSetupView()
                         quickAdd
                         HStack(spacing: 14) {
                             stat("正在下载", value: model.activeCount, icon: "arrow.down", color: Palette.green)
@@ -176,7 +177,7 @@ struct ContentView: View {
             Image(systemName: "externaldrive").font(.system(size: 10))
             Text(model.directory).lineLimit(1).truncationMode(.middle)
             Spacer()
-            Text("拾流 1.0").tracking(1)
+            Text("拾流 1.0.2").tracking(1)
             Text("·  Powered by yt-dlp")
         }.font(.system(size: 9)).foregroundStyle(Palette.muted).padding(.horizontal, 32).frame(height: 37).overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
     }
@@ -247,8 +248,9 @@ struct NewDownloadView: View {
                 TextField("https://…", text: $model.urlInput).textFieldStyle(.roundedBorder).onSubmit { model.inspect() }
                 Button("粘贴") { model.pasteLink() }.buttonStyle(ActionStyle())
                 Button(model.inspecting ? "解析中…" : "解析") { model.inspect() }.buttonStyle(ActionStyle()).disabled(model.inspecting)
-            }
-            if model.inspecting { HStack { ProgressView().controlSize(.small); Text("正在获取视频信息…").font(.system(size: 12)).foregroundStyle(Palette.muted) } }
+            }.disabled(model.adding)
+            EngineSetupView()
+            if model.inspecting { HStack { ProgressView().controlSize(.small); Text(model.enginePreparing ? "引擎准备好后将自动继续解析…" : "正在获取视频信息…").font(.system(size: 12)).foregroundStyle(Palette.muted) } }
             if let info = model.info {
                 HStack(spacing: 14) {
                     Image(systemName: "play.rectangle.fill").font(.system(size: 32)).foregroundStyle(Palette.green)
@@ -260,17 +262,21 @@ struct NewDownloadView: View {
             }
             VStack(alignment: .leading, spacing: 10) {
                 Text("保存格式").font(.system(size: 12, weight: .semibold))
-                Picker("保存格式", selection: $model.quality) { ForEach(Quality.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden()
+                Picker("保存格式", selection: $model.quality) { ForEach(Quality.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden().disabled(model.adding)
                 Text("清晰度为上限，实际可选画质取决于视频源。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                if model.paths.ffmpeg == nil {
+                    Text("未检测到 FFmpeg：视频将选择自带声音的单文件格式；音视频合并和 MP3 转换需安装 FFmpeg。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                }
             }
             HStack {
                 Image(systemName: "folder").foregroundStyle(Palette.green)
                 Text(model.directory).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
-                Spacer(); Button("更改") { model.chooseDirectory() }.buttonStyle(.plain).foregroundStyle(Palette.green)
+                Spacer(); Button("更改") { model.chooseDirectory() }.buttonStyle(.plain).foregroundStyle(Palette.green).disabled(model.adding)
             }.padding(14).background(.white, in: RoundedRectangle(cornerRadius: 10))
             HStack { Text("每次添加一个视频；纯播放列表链接仅保存第一项。").font(.system(size: 10)).foregroundStyle(Palette.muted); Spacer() }
-            HStack { Spacer(); Button("取消") { dismiss() }.buttonStyle(ActionStyle()); Button("加入下载队列") { model.add() }.buttonStyle(ActionStyle(prominent: true)).disabled(model.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.inspecting) }
+            HStack { Spacer(); Button("取消") { dismiss() }.buttonStyle(ActionStyle()); Button(model.adding ? "正在准备…" : "加入下载队列") { model.add() }.buttonStyle(ActionStyle(prominent: true)).disabled(model.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.inspecting || model.adding) }
         }.padding(30).frame(width: 620).background(Palette.paper).foregroundStyle(Palette.ink)
+            .onDisappear { model.cancelNewDownload() }
             .alert("需要处理", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了") { model.error = nil }
             } message: { Text(model.error ?? "") }
@@ -290,11 +296,17 @@ struct SettingsView: View {
             Divider()
             VStack(alignment: .leading, spacing: 12) {
                 Text("下载引擎").font(.headline)
-                dependency("yt-dlp", path: model.paths.downloader)
+                dependency("yt-dlp" + (model.engineVersion.isEmpty ? "" : " · " + model.engineVersion), path: model.paths.downloader)
+                EngineSetupView()
+                if !model.enginePreparing {
+                    Button(model.paths.downloader == nil ? "安装 yt-dlp" : "更新 / 修复 yt-dlp") { model.retryEngineInstallation() }
+                        .disabled(model.activeCount > 0 || model.inspecting || model.adding)
+                }
+                Text("独立引擎由拾流自动下载和校验，安装到用户的应用支持目录。").font(.system(size: 10)).foregroundStyle(Palette.muted)
                 dependency("FFmpeg", path: model.paths.ffmpeg)
                 dependency("Deno（YouTube 脚本运行时）", path: model.paths.runtime)
-                Text("缺少组件时，在终端运行：").font(.system(size: 11)).foregroundStyle(Palette.muted)
-                Text("brew install yt-dlp ffmpeg deno").font(.system(size: 12, design: .monospaced)).textSelection(.enabled).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 8))
+                Text("可选组件：FFmpeg 用于合并和 MP3 转换；Deno 用于 YouTube 脚本。需要时可安装：").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                Text("brew install ffmpeg deno").font(.system(size: 12, design: .monospaced)).textSelection(.enabled).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 8))
                 HStack { Button("重新检测") { model.refreshEngine() }; Spacer(); Link("yt-dlp 项目 ↗", destination: URL(string: "https://github.com/yt-dlp/yt-dlp")!) }
             }
             Divider()
@@ -307,7 +319,7 @@ struct SettingsView: View {
                 }
                 Text("仅在你选择后，由本机 yt-dlp 读取已登录浏览器的 Cookie。新任务使用此设置；系统可能要求浏览器或钥匙串访问授权。").font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
-            Text("拾流 Flow 1.0 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            Text("拾流 Flow 1.0.2 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
             HStack { Spacer(); Button("完成") { dismiss() }.buttonStyle(ActionStyle(prominent: true)) }
         }.padding(30).frame(width: 570).background(Palette.paper).foregroundStyle(Palette.ink)
     }

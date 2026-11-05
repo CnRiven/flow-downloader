@@ -21,8 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if model?.hasActiveProcesses == true {
             let alert = NSAlert()
-            alert.messageText = "暂停下载并退出？"
-            alert.informativeText = "任务会保留，下次打开拾流后可以继续下载。"
+            alert.messageText = "停止当前工作并退出？"
+            alert.informativeText = "下载任务会保留；正在进行的组件安装会取消，下次打开后可以重试。"
             alert.addButton(withTitle: "暂停并退出"); alert.addButton(withTitle: "继续下载")
             if alert.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
@@ -34,12 +34,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct FlowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var model = AppModel()
+    @StateObject private var model: AppModel
+
+    @MainActor init() {
+        if let root = AppSmokeRun.root {
+            let bin = root.appendingPathComponent("engines/bin")
+            _model = StateObject(wrappedValue: AppModel(managedDirectory: bin,
+                locatePaths: { EnginePaths(managedDirectory: bin, searchDirectories: []) },
+                storageDirectory: root.appendingPathComponent("app-data"),
+                preferences: UserDefaults(suiteName: "app.flow.smoke." + UUID().uuidString)!))
+        } else { _model = StateObject(wrappedValue: AppModel()) }
+    }
 
     var body: some Scene {
         WindowGroup("拾流 · Flow") {
             ContentView().environmentObject(model)
                 .onAppear { delegate.model = model }
+                .task {
+                    if AppSmokeRun.root != nil { await AppSmokeRun.run(model) }
+                    else { model.startEnginePreparation() }
+                }
                 .frame(minWidth: 980, minHeight: 680)
                 .preferredColorScheme(.light)
         }

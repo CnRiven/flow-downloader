@@ -1,6 +1,6 @@
 # 验证记录
 
-最近更新：2026-11-05（Asia/Shanghai）。macOS 记录为 2026-11-04，Android 为本次 1.0.1 验证。
+最近更新：2026-11-05（Asia/Shanghai）。当前 macOS 为 1.0.2，Android 为 1.0.1。
 
 ## macOS
 
@@ -9,7 +9,11 @@
 - `codesign --verify --deep --strict` 通过，采用本地 ad-hoc 签名；Info.plist 检查通过。未做 Developer ID 签名和 Apple 公证。
 - 7 组核心检查通过：URL 与参数安全、结构化进度和中文路径、历史恢复与损坏处理、大型元数据与子进程失败、启动前及运行中取消、真实视频下载与 MP3 提取、真实下载打断与 HTTP Range 续传。
 - 集成测试使用 FFmpeg 生成的本地文件，最终续传输出与源文件逐字节相同。未逐一验证 YouTube、Bilibili 等外部站点。
-- yt-dlp、FFmpeg、Deno 使用当前 Mac 已安装的版本，未打包进 `.app`。
+- macOS 1.0.2 新增用户目录中的 yt-dlp 自动安装，FFmpeg、Deno 仍可从本机路径检测，未打包进 `.app`。
+- 自动安装检查通过：成功安装、SHA-256 错误、版本错误、非官方资源地址、路径穿越、取消、断网、重复校验记录、失败后保留旧引擎和临时文件清理。
+- 实际从官方发布下载了 2026.10.26 独立引擎，验证 SHA-256 与 `--version`，在空系统搜索路径下完成真实视频解析、1080p 上限的单文件下载。
+- GUI 首次启动测试使用隔离的应用数据目录和空系统工具搜索路径；在引擎不存在时发起解析，应用安装引擎后自动继续并完成下载，输出文件与测试源逐字节一致。再次启动会复用已安装引擎，保留任务记录。
+- 在仅有 `/usr/bin:/bin` 的环境中运行下载的官方独立引擎，`--version` 成功，不依赖 Homebrew 或外部 Python。GUI 测试不修改用户原本的历史记录或设置。
 
 命令：`bash scripts/build-macos.sh`、`python3 scripts/integration-test.py`。
 
@@ -34,6 +38,7 @@
 
 - `dist/拾流.app`
 - `dist/Flow-macOS.zip`
+- `dist/Flow-macOS-1.0.2-arm64.zip`
 - `dist/Flow-Android-debug.apk`
 - `dist/Flow-Android-1.0.1-debug.apk`（同一份新 APK，保留明确版本名）
 - `dist/Flow-Android-1.0.1.png`（模拟器实际界面）
