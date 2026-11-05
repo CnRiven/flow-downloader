@@ -21,9 +21,16 @@
 | 平台 | 安装包 | 说明 |
 | --- | --- | --- |
 | Android | [下载 1.0.1 APK](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.1/Flow-Android-1.0.1-debug.apk) | Android 10+；测试签名，可覆盖安装之前的测试版 |
-| macOS | [下载 1.0.2 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.2/Flow-macOS-1.0.2-arm64.zip) | Apple Silicon，macOS 13+；缺少 yt-dlp 时自动安装 |
+| macOS | [下载 1.0.3 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.3/Flow-macOS-1.0.3-arm64.zip) | Apple Silicon，macOS 13+；缺少 yt-dlp 时自动安装 |
 
-[Mac 1.0.2 发布说明、源码与校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.2) · [Android 1.0.1 发布说明](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。安装包为预览版，macOS 应用尚未进行 Apple 公证。
+[Mac 1.0.3 发布说明、源码与校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.3) · [Android 1.0.1 发布说明](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。安装包为预览版，macOS 应用尚未进行 Apple 公证。
+
+## macOS 1.0.3：进度与交互优化
+
+- 视频和音频轨道合并计算整个任务的进度；切换轨道、更新预估大小或断点续传时不会倒退。传输最多显示 95%，合并、转换和文件检查完成后才显示 100%。未知大小的下载显示等待动画。
+- 解析立即显示忙碌状态、已等待时间和取消入口；连续点击只启动一次，未修改链接与浏览器选项时复用已获取的预览。
+- 加入队列立即创建任务并关闭弹窗，检查引擎和获取视频信息在后台继续；可以在解析期间直接提交。相同链接、格式、目录和浏览器选项的未完成任务不会重复添加。
+- 减少进度刷新触发的历史文件写入，任务完成、暂停和退出时立即保存。
 
 ## macOS 1.0.2：自动安装下载引擎
 
@@ -124,6 +131,8 @@ cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug
 自动检查还覆盖 URL 与命令参数安全、结构化进度、中文路径、大型元数据、错误输出、取消进程、损坏历史文件和任务恢复。集成测试会打断真实下载，验证 HTTP Range 续传和最终文件逐字节一致性。Mac 界面可运行并检查；Android 是否经过真机验证以交付说明为准，成功生成 APK 不等于已通过所有设备兼容性测试。
 
 Android 1.0.1 已在 Android 15 / arm64 模拟器中验证从旧版升级、保留历史、新版原生引擎执行、视频解析下载、MP3 转换和 MediaStore 导出。可在专用测试模拟器中运行 `scripts/android-smoke-test.py --adb /path/to/adb --port 5037 --legacy-apk /path/to/1.0.0.apk`。该脚本会覆盖安装应用并写入测试历史，请仅用于可丢弃的测试模拟器。
+
+`bash scripts/check-macos-model.sh` 验证解析连续点击、缓存复用、取消和链接修改、解析期间立即入队、队列去重、等待引擎时暂停及重复恢复。`python3 scripts/macos-smoke-test.py` 使用隔离数据目录运行实际应用，验证首次启动时直接入队和重启后解析；该脚本需要本地 FFmpeg 生成测试文件，默认从官方安装引擎，也可通过 `--engine /path/to/yt-dlp` 复用已有独立引擎。
 
 Mac 自动安装检查覆盖校验失败、版本错误、非官方地址、路径穿越、取消、断网、重复校验记录以及已有安装保留。实际 GUI 检查在隔离数据目录、空的系统工具搜索路径中执行了首次启动、官方独立引擎安装、安装后继续解析和下载、再次启动复用引擎；还在仅包含 `/usr/bin:/bin` 的环境中验证了独立引擎无需外部 Python 即可运行。
 

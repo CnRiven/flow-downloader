@@ -19,6 +19,10 @@ with tempfile.TemporaryDirectory(prefix="flow-fixture-") as directory:
     ], check=True)
     resume_fixture = Path(directory) / "resume.mp4"
     resume_fixture.write_bytes(fixture.read_bytes() + bytes(4 * 1024 * 1024))
+    dash = Path(directory) / "dash"
+    dash.mkdir()
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(fixture), "-map", "0:v", "-map", "0:a",
+                    "-c", "copy", "-f", "dash", "-seg_duration", "1", str(dash / "manifest.mpd")], check=True)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         ranges = 0
@@ -56,6 +60,7 @@ with tempfile.TemporaryDirectory(prefix="flow-fixture-") as directory:
         env = dict(os.environ, FLOW_INTEGRATION_URL=f"http://127.0.0.1:{server.server_port}/sample.mp4")
         env["FLOW_RESUME_URL"] = f"http://127.0.0.1:{server.server_port}/resume.mp4"
         env["FLOW_RESUME_FIXTURE"] = str(resume_fixture)
+        env["FLOW_MULTI_TRACK_URL"] = f"http://127.0.0.1:{server.server_port}/dash/manifest.mpd"
         subprocess.run(["swift", "run", "FlowChecks"], cwd=root, env=env, check=True)
         assert Handler.ranges > 0, "Resume did not send an HTTP Range request"
     finally:

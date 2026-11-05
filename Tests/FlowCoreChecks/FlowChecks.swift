@@ -23,12 +23,16 @@ private final class Events: @unchecked Sendable {
     static func main() async throws {
         try validationAndArguments(); print("PASS URL validation and argument safety")
         try structuredEvents(); print("PASS structured progress and Unicode paths")
+        try ProgressChecks.run()
         try historyRecovery(); print("PASS history recovery and corruption handling")
         try await metadataAndFailure(); print("PASS large metadata and subprocess failure")
         try await cancellation(); print("PASS cancellation before launch and while running")
         try await InstallerChecks.run()
         if let url = ProcessInfo.processInfo.environment["FLOW_INTEGRATION_URL"] {
             try await realDownload(url); print("PASS real yt-dlp video download and FFmpeg MP3 conversion")
+        }
+        if let url = ProcessInfo.processInfo.environment["FLOW_MULTI_TRACK_URL"] {
+            try await multiTrackDownload(url); print("PASS real DASH video/audio download, monotonic overall progress and final merge")
         }
         if let url = ProcessInfo.processInfo.environment["FLOW_RESUME_URL"], let fixture = ProcessInfo.processInfo.environment["FLOW_RESUME_FIXTURE"] {
             try await realResume(url, fixture: fixture); print("PASS real download interruption and HTTP Range resume, byte-for-byte output")
@@ -140,5 +144,18 @@ private final class Events: @unchecked Sendable {
         let path = try unwrap(events.values.compactMap { event -> String? in if case .file(let path) = event { return path }; return nil }.last, "Resumed download missing output")
         let actual = try Data(contentsOf: URL(fileURLWithPath: path)), expected = try Data(contentsOf: URL(fileURLWithPath: fixture))
         try expect(actual == expected, "Resumed file differs from source bytes")
+    }
+
+    static func multiTrackDownload(_ url: String) async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Flow multi-track " + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let events = Events(), job = DownloadJob(url: url, info: nil, quality: .best, directory: dir.path)
+        try await DownloadEngine().download(job, process: EngineProcess()) { events.append($0) }
+        let values = events.values.compactMap { event -> Double? in if case .progress(let value, _, _) = event { return value }; return nil }
+        try expect(!values.isEmpty && zip(values, values.dropFirst()).allSatisfy { $0 <= $1 }, "Real DASH progress regressed")
+        try expect(values.allSatisfy { $0 < 1 } && values.contains { $0 > 0 && $0 < 0.95 }, "Real tracks were not aggregated")
+        try expect(events.values.filter { $0 == .processing }.count == 1, "Individual track completion was mistaken for merging")
+        let path = try unwrap(events.values.compactMap { event -> String? in if case .file(let path) = event { return path }; return nil }.last, "Merged output missing")
+        try expect(FileManager.default.fileExists(atPath: path), "Merged file missing")
     }
 }

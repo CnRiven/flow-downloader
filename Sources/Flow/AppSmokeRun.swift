@@ -33,21 +33,47 @@ import FlowCore
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             report["alreadyInstalled"] = model.paths.downloader != nil
             report["isolatedSystemPaths"] = model.paths.ffmpeg == nil && model.paths.runtime == nil
+            let previousIDs = Set(model.jobs.map(\.id))
             model.urlInput = fixture; model.showingNew = true
             model.inspect() // This must install a missing engine and then continue the original request.
             Task {
                 try? await Task.sleep(nanoseconds: 700_000_000)
                 capture(root.appendingPathComponent("first-launch.png"))
             }
-            try await wait(seconds: 360) { !model.inspecting }
-            if let error = model.engineSetupError ?? model.error { throw InputError.processFailed(error) }
-            guard let info = model.info, let installed = model.paths.downloader,
+            if CommandLine.arguments.contains("--smoke-enqueue-during-parse") {
+                for _ in 0..<20 { model.inspect() }
+                try await Task.sleep(nanoseconds: 500_000_000)
+                capture(root.appendingPathComponent("parsing.png"))
+                let start = Date()
+                for _ in 0..<20 { model.add() }
+                report["enqueueMilliseconds"] = Date().timeIntervalSince(start) * 1000
+                guard !model.showingNew, !model.inspecting,
+                      model.jobs.filter({ !previousIDs.contains($0.id) }).count == 1 else {
+                    throw InputError.processFailed("Repeated clicks duplicated or delayed submission")
+                }
+                capture(root.appendingPathComponent("queued.png"))
+            } else {
+                try await wait(seconds: 360) { !model.inspecting }
+                if let error = model.engineSetupError ?? model.error { throw InputError.processFailed(error) }
+                guard let info = model.info else { throw InputError.processFailed("Missing parsed metadata") }
+                report["title"] = info.title
+                for _ in 0..<20 { model.inspect() }
+                guard !model.inspecting else { throw InputError.processFailed("Cached metadata was requested again") }
+                model.quality = .hd1080; model.add()
+            }
+            var observed: [Double] = []
+            try await wait(seconds: 360) {
+                if let job = model.jobs.first(where: { !previousIDs.contains($0.id) }) { observed.append(job.progress) }
+                return !model.hasActiveProcesses
+            }
+            guard zip(observed, observed.dropFirst()).allSatisfy({ $0 <= $1 }) else {
+                throw InputError.processFailed("Visible progress regressed")
+            }
+            report["progressSamples"] = observed
+            guard let installed = model.paths.downloader,
                   installed.hasPrefix(root.path), !model.engineVersion.isEmpty else { throw InputError.missingEngine }
-            report["engine"] = installed; report["version"] = model.engineVersion; report["title"] = info.title
-            model.quality = .hd1080; model.add()
-            try await wait(seconds: 40) { !model.adding && !model.jobs.isEmpty }
-            try await wait(seconds: 40) { !model.hasActiveProcesses }
-            guard let job = model.jobs.first, job.status == .completed, let file = job.filePath,
+            report["engine"] = installed; report["version"] = model.engineVersion
+            guard let job = model.jobs.first(where: { !previousIDs.contains($0.id) }), job.status == .completed, let file = job.filePath,
                   FileManager.default.fileExists(atPath: file) else {
                 throw InputError.processFailed(model.jobs.first?.error ?? model.error ?? "Missing smoke-check output")
             }

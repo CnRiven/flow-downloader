@@ -1,6 +1,6 @@
 # 验证记录
 
-最近更新：2026-11-05（Asia/Shanghai）。当前 macOS 为 1.0.2，Android 为 1.0.1。
+最近更新：2026-11-05（Asia/Shanghai）。当前 macOS 为 1.0.3，Android 为 1.0.1。
 
 ## macOS
 
@@ -15,7 +15,14 @@
 - GUI 首次启动测试使用隔离的应用数据目录和空系统工具搜索路径；在引擎不存在时发起解析，应用安装引擎后自动继续并完成下载，输出文件与测试源逐字节一致。再次启动会复用已安装引擎，保留任务记录。
 - 在仅有 `/usr/bin:/bin` 的环境中运行下载的官方独立引擎，`--version` 成功，不依赖 Homebrew 或外部 Python。GUI 测试不修改用户原本的历史记录或设置。
 
-命令：`bash scripts/build-macos.sh`、`python3 scripts/integration-test.py`。
+1.0.3 新增验证：
+
+- 模拟两条大小不同的音视频轨道，以及大小预估改变、未知大小、分片、续传和延迟回调，进度保持单调，传输阶段不提前显示 100%。
+- 实际使用本地 DASH 清单下载独立音视频流，再由 FFmpeg 合并，检查整个事件序列的进度不回退，合并状态只出现一次。
+- macOS 模型检查模拟连续点击 20 次解析 / 加入队列 / 恢复，确认解析与下载子进程不会重复启动；检查预览复用、取消旧解析、立即创建任务、队列去重、后台引擎准备、等待时暂停和最终历史保存。
+- 实际应用检查使用隔离目录和空系统工具搜索路径，覆盖无引擎时在解析期间立即提交、后台安装后下载，以及再次启动后解析并下载；最终文件与测试源逐字节一致。
+
+命令：`bash scripts/build-macos.sh`、`python3 scripts/integration-test.py`、`bash scripts/check-macos-model.sh`、`python3 scripts/macos-smoke-test.py`。
 
 ## Android
 
@@ -38,7 +45,7 @@
 
 - `dist/拾流.app`
 - `dist/Flow-macOS.zip`
-- `dist/Flow-macOS-1.0.2-arm64.zip`
+- `dist/Flow-macOS-1.0.3-arm64.zip`
 - `dist/Flow-Android-debug.apk`
 - `dist/Flow-Android-1.0.1-debug.apk`（同一份新 APK，保留明确版本名）
 - `dist/Flow-Android-1.0.1.png`（模拟器实际界面）

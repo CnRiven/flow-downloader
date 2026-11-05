@@ -45,10 +45,11 @@ public struct VideoInfo: Codable, Equatable {
 }
 
 public enum JobStatus: String, Codable {
-    case queued, downloading, processing, paused, completed, failed, cancelled
+    case queued, preparing, downloading, processing, paused, completed, failed, cancelled
     public var label: String {
         switch self {
         case .queued: return "等待下载"
+        case .preparing: return "正在获取视频信息"
         case .downloading: return "正在下载"
         case .processing: return "正在合并 / 转换"
         case .paused: return "已暂停"
@@ -57,7 +58,7 @@ public enum JobStatus: String, Codable {
         case .cancelled: return "已取消"
         }
     }
-    public var active: Bool { self == .downloading || self == .processing }
+    public var active: Bool { self == .preparing || self == .downloading || self == .processing }
 }
 
 public struct DownloadJob: Codable, Identifiable {

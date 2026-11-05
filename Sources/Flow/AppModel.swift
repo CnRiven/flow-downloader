@@ -5,10 +5,11 @@ import FlowCore
 @MainActor
 final class AppModel: ObservableObject {
     @Published var jobs: [DownloadJob] = []
-    @Published var urlInput = "" { didSet { if oldValue != urlInput { invalidatePreview() } } }
+    @Published var urlInput = "" { didSet { if oldValue != urlInput { submittedDraft = false; invalidatePreview() } } }
     @Published var info: VideoInfo?
     @Published var inspecting = false
-    @Published var adding = false
+    @Published private(set) var inspectionStartedAt: Date?
+    @Published private(set) var notice: String?
     @Published var enginePreparing = false
     @Published var engineProgress: EngineInstallProgress?
     @Published var engineSetupError: String?
@@ -20,7 +21,7 @@ final class AppModel: ObservableObject {
     @Published var paths = EnginePaths()
     @Published var selectedSection = "全部任务"
     @Published var search = ""
-    @Published var showingNew = false
+    @Published var showingNew = false { didSet { if showingNew && !oldValue { submittedDraft = false } } }
     @Published var showingSettings = false
     @Published var logJob: DownloadJob?
     @Published var logs: [UUID: [String]] = [:]
@@ -35,8 +36,10 @@ final class AppModel: ObservableObject {
     private var preparationTask: Task<Bool, Never>?
     private var preparationID = UUID()
     private var startedPreparation = false
-    private var addTask: Task<Void, Never>?
-    private var addOperationID = UUID()
+    private var submittedDraft = false
+    private var queuePreparation: Task<Void, Never>?
+    private var progressSave: Task<Void, Never>?
+    private var noticeTask: Task<Void, Never>?
     private let historyURL: URL
     private var quitting = false
 
@@ -63,14 +66,17 @@ final class AppModel: ObservableObject {
 
     var filteredJobs: [DownloadJob] {
         jobs.filter { job in
-            let matches = selectedSection == "全部任务" || (selectedSection == "下载中" && [.queued, .downloading, .processing, .paused].contains(job.status)) || (selectedSection == "已完成" && job.status == .completed)
+            let matches = selectedSection == "全部任务" || (selectedSection == "下载中" && (job.status.active || [.queued, .paused].contains(job.status))) || (selectedSection == "已完成" && job.status == .completed)
             return matches && (search.isEmpty || job.title.localizedCaseInsensitiveContains(search) || job.url.localizedCaseInsensitiveContains(search))
         }
     }
-    var activeCount: Int { jobs.filter { [.queued, .downloading, .processing].contains($0.status) }.count }
+    var activeCount: Int { jobs.filter { $0.status.active || $0.status == .queued }.count }
     var completedCount: Int { jobs.filter { $0.status == .completed }.count }
     var pausedCount: Int { jobs.filter { $0.status == .paused }.count }
-    var hasActiveProcesses: Bool { !workers.isEmpty || inspecting || adding || enginePreparing }
+    var hasActiveProcesses: Bool { !workers.isEmpty || inspecting || enginePreparing || queuePreparation != nil }
+    var hasPreview: Bool { info != nil && inspectedURL == (try? Input.validatedURL(urlInput)) }
+    var canInspect: Bool { !inspecting && !hasPreview && !urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var inspectButtonTitle: String { inspecting ? "解析中…" : (hasPreview ? "已解析" : "解析") }
 
     func startEnginePreparation() {
         guard !startedPreparation else { return }; startedPreparation = true
@@ -102,8 +108,9 @@ final class AppModel: ObservableObject {
                 }
                 let installed = try await EngineInstaller().install(to: managedDirectory) { [weak self] update in
                     Task { @MainActor in
-                        guard self?.preparationID == id else { return }
-                        self?.engineProgress = update
+                        guard let self, self.preparationID == id else { return }
+                        if let next = update.fraction, let previous = self.engineProgress?.fraction, next < previous { return }
+                        self.engineProgress = update
                     }
                 }
                 try Task.checkCancellation()
@@ -122,54 +129,70 @@ final class AppModel: ObservableObject {
 
     private func invalidatePreview() {
         inspectionToken = UUID(); inspection?.cancel(); inspection = nil
-        inspecting = false; info = nil; inspectedURL = nil
+        inspecting = false; inspectionStartedAt = nil; info = nil; inspectedURL = nil
     }
 
+    func cancelInspection() { invalidatePreview() }
+
     func inspect() {
+        guard !inspecting else { return }
         do {
             let url = try Input.validatedURL(urlInput)
+            guard !(inspectedURL == url && info != nil) else { return }
             inspection?.cancel()
             let process = EngineProcess(), token = UUID(), cookie = browser.isEmpty ? nil : browser
-            inspectionToken = token; inspection = process; inspecting = true; error = nil; info = nil
+            inspectionToken = token; inspection = process; inspecting = true; inspectionStartedAt = Date(); error = nil; info = nil
             Task { [self] in
                 do {
-                    guard await prepareEngine(), token == inspectionToken else {
-                        if token == inspectionToken { inspecting = false; inspection = nil }
-                        return
-                    }
+                    guard token == inspectionToken else { return }
+                    guard await prepareEngine(), token == inspectionToken else { finishInspection(token); return }
                     let engine = DownloadEngine(paths: paths)
                     let result = try await engine.inspect(url, browser: cookie, process: process)
                     guard token == inspectionToken else { return }
                     info = result; inspectedURL = url
                 } catch is CancellationError { }
                 catch { if token == inspectionToken { self.error = error.localizedDescription } }
-                if token == inspectionToken { inspecting = false; inspection = nil }
+                finishInspection(token)
             }
         } catch { self.error = error.localizedDescription }
+    }
+
+    private func finishInspection(_ token: UUID) {
+        guard token == inspectionToken else { return }
+        inspecting = false; inspection = nil; inspectionStartedAt = nil
     }
 
     func add() {
-        guard !adding else { return }
+        guard !submittedDraft else { return }
         do {
             let url = try Input.validatedURL(urlInput)
-            let job = DownloadJob(url: url, info: inspectedURL == url ? info : nil, quality: quality, directory: directory, cookieBrowser: browser.isEmpty ? nil : browser)
-            adding = true; error = nil
-            let operation = UUID(); addOperationID = operation
-            addTask = Task {
-                defer { if addOperationID == operation { adding = false; addTask = nil } }
-                guard await prepareEngine(), !Task.isCancelled, addOperationID == operation else { return }
-                if job.quality == .audio && paths.ffmpeg == nil {
-                    self.error = "提取 MP3 需要 FFmpeg，请在偏好设置中安装可选组件。"; return
-                }
-                jobs.insert(job, at: 0); persist()
-                adding = false; addTask = nil; showingNew = false; urlInput = ""
-                pump()
+            paths = locatePaths()
+            if quality == .audio && paths.ffmpeg == nil {
+                error = "提取 MP3 需要 FFmpeg，请在偏好设置中安装可选组件。"; return
             }
+            let job = DownloadJob(url: url, info: inspectedURL == url ? info : nil, quality: quality, directory: directory, cookieBrowser: browser.isEmpty ? nil : browser)
+            let duplicate = jobs.first {
+                ($0.status.active || [.queued, .paused].contains($0.status)) && $0.url == url && $0.quality == quality &&
+                URL(fileURLWithPath: $0.directory).standardizedFileURL == URL(fileURLWithPath: directory).standardizedFileURL && $0.cookieBrowser == job.cookieBrowser
+            }
+            error = nil
+            if duplicate == nil { jobs.insert(job, at: 0); persist() }
+            // Submission is immediate. Engine checks and extraction continue in the task list.
+            cancelInspection(); showingNew = false; urlInput = ""; submittedDraft = true
+            selectedSection = "全部任务"; search = ""
+            showNotice(duplicate == nil ? "已加入下载队列" : "此任务已在队列中，无需重复添加")
+            pump()
         } catch { self.error = error.localizedDescription }
     }
 
-    func cancelNewDownload() {
-        addOperationID = UUID(); addTask?.cancel(); addTask = nil; adding = false; invalidatePreview()
+    func cancelNewDownload() { invalidatePreview() }
+
+    private func showNotice(_ message: String) {
+        noticeTask?.cancel(); notice = message
+        noticeTask = Task {
+            do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
+            notice = nil; noticeTask = nil
+        }
     }
 
     func pasteLink() {
@@ -187,16 +210,13 @@ final class AppModel: ObservableObject {
 
     func pause(_ id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status.active || jobs[index].status == .queued else { return }
-        jobs[index].status = .paused; workers[id]?.cancel(); persist()
+        jobs[index].status = .paused; jobs[index].speed = ""; jobs[index].eta = ""; workers[id]?.cancel(); persist()
     }
 
     func resume(_ id: UUID) {
-        guard workers[id] == nil else { return }
-        Task {
-            guard await prepareEngine(), jobs.contains(where: { $0.id == id }), workers[id] == nil else { return }
-            edit(id) { $0.status = .queued; $0.error = nil; $0.speed = ""; $0.eta = "" }
-            pump()
-        }
+        guard workers[id] == nil, let job = jobs.first(where: { $0.id == id }), [.paused, .failed, .cancelled].contains(job.status) else { return }
+        edit(id) { $0.status = .queued; $0.error = nil; $0.speed = ""; $0.eta = "" }
+        pump()
     }
 
     func remove(_ id: UUID) {
@@ -214,7 +234,8 @@ final class AppModel: ObservableObject {
     func refreshEngine() { confirmedEngine = nil; Task { _ = await prepareEngine() } }
 
     func shutdown() {
-        quitting = true; inspection?.cancel(); preparationTask?.cancel(); addTask?.cancel()
+        quitting = true; inspection?.cancel(); preparationTask?.cancel(); queuePreparation?.cancel()
+        progressSave?.cancel(); progressSave = nil; noticeTask?.cancel()
         for id in Array(workers.keys) { pause(id) }
         persist()
     }
@@ -225,15 +246,31 @@ final class AppModel: ObservableObject {
     }
 
     private func persist() {
+        progressSave?.cancel(); progressSave = nil
         do { try JobHistory.save(jobs, to: historyURL) }
         catch { self.error = "无法保存任务记录：" + error.localizedDescription }
     }
 
     private func pump() {
-        guard !quitting else { return }
+        guard !quitting, jobs.contains(where: { $0.status == .queued }) else { return }
+        guard !enginePreparing, let path = paths.downloader, confirmedEngine == path else {
+            guard queuePreparation == nil else { return }
+            queuePreparation = Task {
+                let ready = await prepareEngine()
+                queuePreparation = nil
+                guard !quitting else { return }
+                if ready { pump() }
+                else {
+                    for id in jobs.filter({ $0.status == .queued }).map(\.id) {
+                        edit(id) { $0.status = .failed; $0.error = engineSetupError ?? "引擎未就绪，请重试任务。" }
+                    }
+                }
+            }
+            return
+        }
         while workers.count < 2, let job = jobs.first(where: { $0.status == .queued && workers[$0.id] == nil }) {
             let process = EngineProcess(), engine = DownloadEngine(paths: paths), id = job.id
-            workers[id] = process; edit(id) { $0.status = .downloading }
+            workers[id] = process; edit(id) { $0.status = .preparing }
             Task { [self] in
                 do {
                     try await engine.download(job, process: process) { [weak self] event in
@@ -262,11 +299,20 @@ final class AppModel: ObservableObject {
     }
 
     private func handle(_ event: EngineEvent, id: UUID) {
-        guard let current = jobs.first(where: { $0.id == id }), current.status != .paused else { return }
+        guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status.active else { return }
         switch event {
-        case .progress(let progress, let speed, let eta): edit(id) { $0.progress = progress; $0.speed = speed; $0.eta = eta; $0.status = .downloading }
-        case .processing: edit(id) { $0.status = .processing }
-        case .title(let title): edit(id) { $0.title = title }
+        case .progress(let progress, let speed, let eta):
+            guard jobs[index].status != .processing, progress.isFinite else { return }
+            jobs[index].progress = max(jobs[index].progress, min(0.95, max(0, progress)))
+            jobs[index].speed = speed; jobs[index].eta = eta; jobs[index].status = .downloading
+            if progressSave == nil {
+                progressSave = Task {
+                    do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+                    persist()
+                }
+            }
+        case .processing: edit(id) { $0.status = .processing; $0.progress = max($0.progress, 0.95); $0.speed = ""; $0.eta = "" }
+        case .title(let title): edit(id) { $0.title = title; if $0.status == .preparing { $0.status = .downloading } }
         case .file(let file): edit(id) { $0.filePath = file }
         case .log(let line):
             var lines = logs[id] ?? []; lines.append(line)

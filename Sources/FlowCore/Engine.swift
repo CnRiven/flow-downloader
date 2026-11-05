@@ -161,7 +161,10 @@ public struct DownloadEngine {
         let work = URL(fileURLWithPath: job.directory).appendingPathComponent(".flow-partials/" + job.id.uuidString).path
         var args = commonArguments(browser: job.cookieBrowser) + [
             "--newline", "--progress", "--no-simulate", "--continue", "--no-overwrites",
-            "--progress-template", "download:FLOW_PROGRESS:%(progress)j",
+            "--progress-delta", "0.2",
+            "--progress-template", "download:FLOW_PROGRESS:{\"format_id\":%(info.format_id|default)j,\"progress\":%(progress)j}",
+            "--print", "before_dl:FLOW_PLAN:%(requested_formats.:.{format_id,filesize,filesize_approx})j",
+            "--print", "post_process:FLOW_PROCESSING:%(id)j",
             "--print", "before_dl:FLOW_TITLE:%(title)j", "--print", "after_move:FLOW_FILE:%(filepath)j",
             "-P", "home:" + job.directory, "-P", "temp:" + work,
             "-o", "%(title).160B [%(id)s].%(ext)s", "-f", paths.ffmpeg == nil ? job.quality.singleFileFormat : job.quality.format
@@ -176,6 +179,9 @@ public struct DownloadEngine {
         _ = try Input.validatedURL(job.url)
         guard let executable = paths.downloader else { throw InputError.missingEngine }
         try FileManager.default.createDirectory(atPath: job.directory, withIntermediateDirectories: true)
-        _ = try await process.run(executable: executable, arguments: arguments(for: job)) { line in onEvent(EngineEvent.parse(line)) }
+        let events = DownloadEventStream(previousProgress: job.progress)
+        _ = try await process.run(executable: executable, arguments: arguments(for: job)) { line in
+            if let event = events.consume(line) { onEvent(event) }
+        }
     }
 }

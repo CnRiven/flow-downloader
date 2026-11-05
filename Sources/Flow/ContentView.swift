@@ -13,13 +13,14 @@ enum Palette {
 
 struct ActionStyle: ButtonStyle {
     var prominent = false
+    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 13, weight: .semibold))
             .padding(.horizontal, 17).padding(.vertical, 11)
             .foregroundStyle(prominent ? .white : Palette.ink)
             .background(prominent ? Palette.green : Color.white, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(prominent ? .clear : Palette.line))
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
     }
 }
 
@@ -34,6 +35,10 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 28) {
                         intro
                         EngineSetupView()
+                        if let notice = model.notice {
+                            Label(notice, systemImage: "checkmark.circle.fill").font(.system(size: 12))
+                                .foregroundStyle(Palette.green).accessibilityIdentifier("queue-notice")
+                        }
                         quickAdd
                         HStack(spacing: 14) {
                             stat("正在下载", value: model.activeCount, icon: "arrow.down", color: Palette.green)
@@ -66,7 +71,7 @@ struct ContentView: View {
             }.padding(.top, 34).padding(.bottom, 42)
             Text("资料库").font(.system(size: 10, weight: .medium)).tracking(2).foregroundStyle(.white.opacity(0.35)).padding(.leading, 12).padding(.bottom, 14)
             nav("全部任务", icon: "square.grid.2x2", count: model.jobs.count)
-            nav("下载中", icon: "arrow.down.circle", count: model.jobs.filter { [.queued, .downloading, .processing, .paused].contains($0.status) }.count)
+            nav("下载中", icon: "arrow.down.circle", count: model.jobs.filter { $0.status.active || [.queued, .paused].contains($0.status) }.count)
             nav("已完成", icon: "checkmark.circle", count: model.completedCount)
             Spacer()
             VStack(alignment: .leading, spacing: 12) {
@@ -127,7 +132,14 @@ struct ContentView: View {
                 Image(systemName: "link").font(.system(size: 16)).foregroundStyle(Palette.green)
                 TextField("粘贴视频链接，支持 YouTube、Bilibili 等站点", text: $model.urlInput).textFieldStyle(.plain).font(.system(size: 12)).onSubmit { model.showingNew = true }
                 Button { model.pasteLink() } label: { Image(systemName: "doc.on.clipboard").foregroundStyle(Palette.muted) }.buttonStyle(.plain).help("粘贴链接")
-                Button("解析链接") { model.showingNew = true; model.inspect() }.buttonStyle(ActionStyle(prominent: true)).disabled(model.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button {
+                    model.showingNew = true; model.inspect()
+                } label: {
+                    HStack(spacing: 6) {
+                        if model.inspecting { ProgressView().controlSize(.small) }
+                        Text(model.hasPreview ? "查看解析结果" : (model.inspecting ? "解析中…" : "解析链接"))
+                    }
+                }.buttonStyle(ActionStyle(prominent: true)).disabled(model.inspecting || model.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.padding(9).padding(.leading, 7).background(.white, in: RoundedRectangle(cornerRadius: 12))
             HStack(spacing: 15) {
                 Label("画质自由选择", systemImage: "4k.tv")
@@ -177,7 +189,7 @@ struct ContentView: View {
             Image(systemName: "externaldrive").font(.system(size: 10))
             Text(model.directory).lineLimit(1).truncationMode(.middle)
             Spacer()
-            Text("拾流 1.0.2").tracking(1)
+            Text("拾流 1.0.3").tracking(1)
             Text("·  Powered by yt-dlp")
         }.font(.system(size: 9)).foregroundStyle(Palette.muted).padding(.horizontal, 32).frame(height: 37).overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
     }
@@ -202,12 +214,20 @@ struct JobRow: View {
                     Text("·")
                     Text(job.quality.label)
                     Spacer()
-                    Text(job.status.label).foregroundStyle(job.status == .failed ? .red : Palette.green)
+                    Text(job.status == .queued && model.enginePreparing ? "等待引擎就绪" : job.status.label).foregroundStyle(job.status == .failed ? .red : Palette.green)
                 }.font(.system(size: 10)).foregroundStyle(Palette.muted)
                 if job.status.active || job.status == .paused {
-                    ProgressView(value: job.progress).tint(Palette.green)
+                    if job.status == .preparing || (job.status == .downloading && job.progress == 0) {
+                        ProgressView().progressViewStyle(.linear).tint(Palette.green)
+                    } else { ProgressView(value: job.progress).tint(Palette.green) }
                     HStack {
-                        Text(job.speed); Text(job.eta); Spacer(); Text("\(Int(job.progress * 100))%")
+                        if job.status == .preparing {
+                            Text("正在连接视频站点，请稍候…")
+                        } else if job.status == .processing {
+                            Text("正在合并、转换或整理文件…")
+                        } else { Text(job.speed); Text(job.eta) }
+                        Spacer()
+                        if job.progress > 0 { Text("\(Int(job.progress * 100))%") }
                     }.font(.system(size: 9, design: .monospaced)).foregroundStyle(Palette.muted)
                 }
                 if let error = job.error { Text(error).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2).textSelection(.enabled) }
@@ -247,10 +267,23 @@ struct NewDownloadView: View {
             HStack {
                 TextField("https://…", text: $model.urlInput).textFieldStyle(.roundedBorder).onSubmit { model.inspect() }
                 Button("粘贴") { model.pasteLink() }.buttonStyle(ActionStyle())
-                Button(model.inspecting ? "解析中…" : "解析") { model.inspect() }.buttonStyle(ActionStyle()).disabled(model.inspecting)
-            }.disabled(model.adding)
+                Button { model.inspect() } label: {
+                    HStack(spacing: 6) {
+                        if model.inspecting { ProgressView().controlSize(.small) }
+                        else if model.hasPreview { Image(systemName: "checkmark") }
+                        Text(model.inspectButtonTitle)
+                    }
+                }.buttonStyle(ActionStyle()).disabled(!model.canInspect).accessibilityIdentifier("inspect-button")
+            }
             EngineSetupView()
-            if model.inspecting { HStack { ProgressView().controlSize(.small); Text(model.enginePreparing ? "引擎准备好后将自动继续解析…" : "正在获取视频信息…").font(.system(size: 12)).foregroundStyle(Palette.muted) } }
+            if model.inspecting {
+                HStack(spacing: 7) {
+                    Text(model.enginePreparing ? "引擎准备好后自动继续解析" : "正在获取视频信息")
+                    if let start = model.inspectionStartedAt { Text(start, style: .timer).monospacedDigit() }
+                    Spacer()
+                    Button("取消解析") { model.cancelInspection() }.buttonStyle(.plain).foregroundStyle(Palette.green)
+                }.font(.system(size: 11)).foregroundStyle(Palette.muted)
+            }
             if let info = model.info {
                 HStack(spacing: 14) {
                     Image(systemName: "play.rectangle.fill").font(.system(size: 32)).foregroundStyle(Palette.green)
@@ -262,7 +295,7 @@ struct NewDownloadView: View {
             }
             VStack(alignment: .leading, spacing: 10) {
                 Text("保存格式").font(.system(size: 12, weight: .semibold))
-                Picker("保存格式", selection: $model.quality) { ForEach(Quality.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden().disabled(model.adding)
+                Picker("保存格式", selection: $model.quality) { ForEach(Quality.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden()
                 Text("清晰度为上限，实际可选画质取决于视频源。").font(.system(size: 10)).foregroundStyle(Palette.muted)
                 if model.paths.ffmpeg == nil {
                     Text("未检测到 FFmpeg：视频将选择自带声音的单文件格式；音视频合并和 MP3 转换需安装 FFmpeg。").font(.system(size: 10)).foregroundStyle(Palette.muted)
@@ -271,10 +304,15 @@ struct NewDownloadView: View {
             HStack {
                 Image(systemName: "folder").foregroundStyle(Palette.green)
                 Text(model.directory).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
-                Spacer(); Button("更改") { model.chooseDirectory() }.buttonStyle(.plain).foregroundStyle(Palette.green).disabled(model.adding)
+                Spacer(); Button("更改") { model.chooseDirectory() }.buttonStyle(.plain).foregroundStyle(Palette.green)
             }.padding(14).background(.white, in: RoundedRectangle(cornerRadius: 10))
-            HStack { Text("每次添加一个视频；纯播放列表链接仅保存第一项。").font(.system(size: 10)).foregroundStyle(Palette.muted); Spacer() }
-            HStack { Spacer(); Button("取消") { dismiss() }.buttonStyle(ActionStyle()); Button(model.adding ? "正在准备…" : "加入下载队列") { model.add() }.buttonStyle(ActionStyle(prominent: true)).disabled(model.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.inspecting || model.adding) }
+            Text(model.inspecting ? "可直接加入队列，视频信息会在后台获取，无需等待解析。" : "可直接加入队列；每次保存一个视频，播放列表仅保存第一项。")
+                .font(.system(size: 10)).foregroundStyle(Palette.muted)
+            HStack {
+                Spacer(); Button("取消") { dismiss() }.buttonStyle(ActionStyle())
+                Button("加入下载队列") { model.add() }.buttonStyle(ActionStyle(prominent: true))
+                    .disabled(model.urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("enqueue-button")
+            }
         }.padding(30).frame(width: 620).background(Palette.paper).foregroundStyle(Palette.ink)
             .onDisappear { model.cancelNewDownload() }
             .alert("需要处理", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -300,7 +338,7 @@ struct SettingsView: View {
                 EngineSetupView()
                 if !model.enginePreparing {
                     Button(model.paths.downloader == nil ? "安装 yt-dlp" : "更新 / 修复 yt-dlp") { model.retryEngineInstallation() }
-                        .disabled(model.activeCount > 0 || model.inspecting || model.adding)
+                        .disabled(model.activeCount > 0 || model.inspecting)
                 }
                 Text("独立引擎由拾流自动下载和校验，安装到用户的应用支持目录。").font(.system(size: 10)).foregroundStyle(Palette.muted)
                 dependency("FFmpeg", path: model.paths.ffmpeg)
@@ -319,7 +357,7 @@ struct SettingsView: View {
                 }
                 Text("仅在你选择后，由本机 yt-dlp 读取已登录浏览器的 Cookie。新任务使用此设置；系统可能要求浏览器或钥匙串访问授权。").font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
-            Text("拾流 Flow 1.0.2 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            Text("拾流 Flow 1.0.3 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
             HStack { Spacer(); Button("完成") { dismiss() }.buttonStyle(ActionStyle(prominent: true)) }
         }.padding(30).frame(width: 570).background(Palette.paper).foregroundStyle(Palette.ink)
     }
