@@ -16,6 +16,15 @@
 
 </details>
 
+## 下载安装包
+
+| 平台 | 安装包 | 说明 |
+| --- | --- | --- |
+| Android | [下载 1.0.1 APK](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.1/Flow-Android-1.0.1-debug.apk) | Android 10+；测试签名，可覆盖安装之前的测试版 |
+| macOS | [下载 1.0.0 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.1/Flow-macOS-1.0.0-arm64.zip) | Apple Silicon，macOS 13+；解压后打开「拾流.app」 |
+
+[完整发布说明、项目源码与 SHA-256 校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。这是预览版；macOS 应用尚未进行 Apple 公证，下载引擎依赖需要按下文安装。
+
 ## 获取项目
 
 ```sh
@@ -23,7 +32,7 @@ git clone https://github.com/CnRiven/flow-downloader.git
 cd flow-downloader
 ```
 
-仓库提供应用源码、构建脚本、许可证和测试。安装包与本机开发工具不纳入 Git 历史。克隆仓库后，按下文的「构建 macOS」或「构建 Android」生成安装包。
+仓库提供应用源码、构建脚本、许可证和测试。安装包在 GitHub Releases 中提供，本机开发工具不纳入 Git 历史。也可以克隆仓库后，按下文的「构建 macOS」或「构建 Android」自行生成安装包。
 
 ## Android 1.0.1（2026-11-05）
 
