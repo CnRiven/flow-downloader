@@ -1,0 +1,4 @@
+<resources>
+    <string name="job_summary">%1$d 个进行中    ·    %2$d 个已完成</string>
+    <string name="douyin_browser_intro">请在抖音官方网页完成验证或登录。播放目标视频后，可使用当前视频；Cookie 仅保存在本机。</string>
+</resources>
