@@ -154,6 +154,7 @@ import WebKit
         let cleared = try await session.prepare(source)
         try expect(cleared == nil, "Cleared captured video was still available")
         print("PASS real isolated WebKit cookie export, explicit video selection, file permissions, cleanup and clearing")
+        if let url = ProcessInfo.processInfo.environment["FLOW_BROWSER_TEST_URL"] { try await WebCaptureChecks.run(url: url) }
         print("All macOS interaction checks passed.")
     }
 }

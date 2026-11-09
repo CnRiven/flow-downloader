@@ -28,6 +28,10 @@ with tempfile.TemporaryDirectory(prefix="flow-fixture-") as directory:
         ranges = 0
 
         def do_GET(self):
+            if self.path == "/video/111":
+                data = b'''<!doctype html><video></video><script>document.querySelector('video').src=URL.createObjectURL(new Blob(['test'],{type:'video/mp4'})); fetch('https://www.douyin.com/aweme/v1/web/aweme/detail/');</script>'''
+                self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+                return
             if self.path != "/resume.mp4":
                 return super().do_GET()
             size = resume_fixture.stat().st_size
@@ -63,5 +67,7 @@ with tempfile.TemporaryDirectory(prefix="flow-fixture-") as directory:
         env["FLOW_MULTI_TRACK_URL"] = f"http://127.0.0.1:{server.server_port}/dash/manifest.mpd"
         subprocess.run(["swift", "run", "FlowChecks"], cwd=root, env=env, check=True)
         assert Handler.ranges > 0, "Resume did not send an HTTP Range request"
+        env["FLOW_BROWSER_TEST_URL"] = f"http://127.0.0.1:{server.server_port}/video/111"
+        subprocess.run(["bash", "scripts/check-macos-model.sh"], cwd=root, env=env, check=True)
     finally:
         server.shutdown()

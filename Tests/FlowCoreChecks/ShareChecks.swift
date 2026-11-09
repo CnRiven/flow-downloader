@@ -38,6 +38,11 @@ enum ShareChecks {
         try expect(!external.contains("--load-info-json") && !external.contains("--cookies"), "Douyin session leaked to another website")
         try expect(!access.hasSelectedVideo(for: "https://www.douyin.com/video/999"), "Selected video was reused for a different post")
         try expect(FailureMessage.needsDouyinLogin("Fresh cookies (not necessarily logged in) are needed", url: source), "Fresh-cookie error has no login recovery")
+        let captured: [String: Any] = ["id": "7651105998492519707", "title": "Capture", "urls": ["blob:unusable", "https://douyinvod.com.evil.test/a.mp4", "https://media.douyinvod.com/video/a.mp4"]]
+        let candidate = WebVideoCandidate.decode(captured)
+        try expect(candidate?.matches(source) == true && candidate?.mediaURL == "https://media.douyinvod.com/video/a.mp4", "Browser candidate did not restrict media URL")
+        try expect(candidate?.matches("https://www.douyin.com/video/123") == false, "Browser candidate crossed post boundary")
+        try expect(FailureMessage.display("Fresh cookies", url: source, hasSavedSession: true).contains("无需反复登录"), "Saved-session rejection repeated the login loop")
         print("PASS Douyin share text, canonical URLs, restricted redirects, cookie scoping and login recovery")
         if ProcessInfo.processInfo.environment["FLOW_REAL_DOUYIN_LINK"] != nil {
             let resolved = try await DouyinLinkResolver().resolve(example)

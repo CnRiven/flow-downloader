@@ -9,6 +9,6 @@ else
     CORE_OBJECTS=("$BIN_DIR"/FlowCore.build/*.o)
 fi
 swiftc -parse-as-library -I "$BIN_DIR/Modules" -I "$BIN_DIR" \
-    Sources/Flow/AppModel.swift Sources/Flow/DouyinWebSession.swift Sources/Flow/DouyinLoginView.swift Tests/FlowAppChecks/ModelChecks.swift \
+    Sources/Flow/AppModel.swift Sources/Flow/DouyinWebSession.swift Sources/Flow/DouyinLoginView.swift Tests/FlowAppChecks/ModelChecks.swift Tests/FlowAppChecks/WebCaptureChecks.swift \
     "${CORE_OBJECTS[@]}" -o "$BIN_DIR/FlowAppChecks"
 "$BIN_DIR/FlowAppChecks"

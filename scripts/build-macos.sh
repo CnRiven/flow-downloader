@@ -17,8 +17,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>app.flow.downloader</string>
 <key>CFBundleName</key><string>拾流</string>
 <key>CFBundleDisplayName</key><string>拾流</string>
-<key>CFBundleVersion</key><string>5</string>
-<key>CFBundleShortVersionString</key><string>1.0.4</string>
+<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>1.0.5</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>Flow</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>

@@ -36,7 +36,10 @@ public enum FailureMessage {
         let lower = message.lowercased()
         return ["fresh cookies", "cookies are needed", "login", "sign in", "captcha", "verify", "403", "unsupported url", "empty video", "unable to extract"].contains { lower.contains($0) }
     }
-    public static func display(_ message: String, url: String) -> String {
-        needsDouyinLogin(message, url: url) ? "抖音需要新的网页验证或登录状态。请打开「抖音登录 / 验证」，在官方网页完成后保存状态并重试；也可播放目标视频后选择「使用当前视频」。" : message
+    public static func display(_ message: String, url: String, hasSavedSession: Bool = false) -> String {
+        guard needsDouyinLogin(message, url: url) else { return message }
+        return hasSavedSession
+            ? "已保存网页状态，但常规解析仍被抖音拒绝。请打开目标网页播放视频，再点「读取网页视频并下载」，无需反复登录。"
+            : "抖音需要网页验证。请打开「抖音登录 / 验证」，完成后播放目标视频，再点「读取网页视频并下载」。"
     }
 }

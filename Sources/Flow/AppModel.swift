@@ -204,7 +204,7 @@ final class AppModel: ObservableObject {
         if FailureMessage.needsDouyinLogin(failure.localizedDescription, url: url) || (Input.isDouyin(url) && failure is DouyinLinkError) {
             loginRequiredURL = url; loginRequiredJob = job
         }
-        let message = FailureMessage.display(failure.localizedDescription, url: url)
+        let message = FailureMessage.display(failure.localizedDescription, url: url, hasSavedSession: douyinSession.enabled)
         if let job { edit(job) { $0.status = .failed; $0.error = message } }
         else { error = message }
     }
@@ -217,7 +217,7 @@ final class AppModel: ObservableObject {
         if let loginWindow, loginWindow.isVisible { loginWindow.makeKeyAndOrderFront(nil); return }
         let browser = DouyinBrowser(source: source, session: douyinSession) { [weak self] page, captured in
             guard let self else { return }
-            self.douyinSessionSummary = "已保存本机网页状态，可重新验证或登录"
+            self.douyinSessionSummary = captured ? "已读取目标网页视频，可以继续下载" : "已保存本机网页状态，可重新验证或登录"
             self.loginRequiredURL = nil; self.loginRequiredJob = nil
             self.loginWindow?.close(); self.loginWindow = nil
             Task {

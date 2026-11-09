@@ -1,6 +1,6 @@
 # 验证记录
 
-最近更新：2026-11-09（Asia/Shanghai）。当前 macOS 为 1.0.4，Android 为 1.0.1。
+最近更新：2026-11-09（Asia/Shanghai）。当前 macOS 为 1.0.5，Android 为 1.0.1。
 
 ## macOS
 
@@ -33,6 +33,13 @@
 - 实际应用打开官方抖音网页，显示目标视频的官方登录表单，并验证分享输入中的登录入口；网页测试使用非持久、隔离的 WebKit 数据存储。
 - 未使用用户的账号或浏览器 Cookie。真实示例在未登录环境中返回 HTTP 403 / Fresh cookies，已映射为网页登录引导；未宣称完成该视频的登录后下载测试。
 
+1.0.5 新增验证：
+
+- 在用户已登录的拾流官方网页中复现旧版失败：目标视频可播放，读取 `currentSrc` 得到 blob 地址，常规解析仍被拒绝。
+- 真实 WebKit 受控页面验证 Fetch、XHR、首屏 JSON、camelCase 地址数组、播放器组件数据读取；相关视频、跨视频 ID 和页面内导航不会错误复用地址。
+- 在原生应用中确认示例任务 `7651105998492519707` 显示已完成；文件实际存在，178,809,979 字节，1440 × 1080 H.264 视频、AAC 音频，容器时长 1010.966667 秒。
+- 测试使用已保存的本机状态，未上传或在日志中输出用户登录信息；发布包不包含测试下载视频、WebKit 数据、Cookie 或签名播放地址。
+
 ## Android
 
 - JDK 17、Gradle 8.11.1、AGP 8.9.2、Kotlin 2.1.20 构建成功。
@@ -54,7 +61,7 @@
 
 - `dist/拾流.app`
 - `dist/Flow-macOS.zip`
-- `dist/Flow-macOS-1.0.4-arm64.zip`
+- `dist/Flow-macOS-1.0.5-arm64.zip`
 - `dist/Flow-Android-debug.apk`
 - `dist/Flow-Android-1.0.1-debug.apk`（同一份新 APK，保留明确版本名）
 - `dist/Flow-Android-1.0.1.png`（模拟器实际界面）
@@ -62,3 +69,5 @@
 - `dist/SHA256SUMS.txt`
 
 源码和许可证分发注意事项见 `THIRD_PARTY_NOTICES.md`。对外发布前还需要完整整理二进制依赖对应源码、平台发布签名和设备测试。
+
+真实示例的完整音视频解码检查通过（FFmpeg 逐帧 / 逐音频包读取全片，无解码错误）。

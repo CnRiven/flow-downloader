@@ -190,7 +190,7 @@ struct ContentView: View {
             Image(systemName: "externaldrive").font(.system(size: 10))
             Text(model.directory).lineLimit(1).truncationMode(.middle)
             Spacer()
-            Text("拾流 1.0.4").tracking(1)
+            Text("拾流 1.0.5").tracking(1)
             Text("·  Powered by yt-dlp")
         }.font(.system(size: 9)).foregroundStyle(Palette.muted).padding(.horizontal, 32).frame(height: 37).overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
     }
@@ -384,7 +384,7 @@ struct SettingsView: View {
                 }
                 Text("仅在你选择后，由本机 yt-dlp 读取已登录浏览器的 Cookie。新任务使用此设置；系统可能要求浏览器或钥匙串访问授权。").font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
-            Text("拾流 Flow 1.0.4 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            Text("拾流 Flow 1.0.5 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
             HStack { Spacer(); Button("完成") { dismiss() }.buttonStyle(ActionStyle(prominent: true)) }
         }.padding(30).frame(width: 570).background(Palette.paper).foregroundStyle(Palette.ink)
     }

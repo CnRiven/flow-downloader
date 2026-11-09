@@ -21,9 +21,17 @@
 | 平台 | 安装包 | 说明 |
 | --- | --- | --- |
 | Android | [下载 1.0.1 APK](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.1/Flow-Android-1.0.1-debug.apk) | Android 10+；测试签名，可覆盖安装之前的测试版 |
-| macOS | [下载 1.0.4 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.4/Flow-macOS-1.0.4-arm64.zip) | Apple Silicon，macOS 13+；缺少 yt-dlp 时自动安装 |
+| macOS | [下载 1.0.5 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.5/Flow-macOS-1.0.5-arm64.zip) | Apple Silicon，macOS 13+；缺少 yt-dlp 时自动安装 |
 
-[Mac 1.0.4 发布说明、源码与校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.4) · [Android 1.0.1 发布说明](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。安装包为预览版，macOS 应用尚未进行 Apple 公证。
+[Mac 1.0.5 发布说明、源码与校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.5) · [Android 1.0.1 发布说明](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。安装包为预览版，macOS 应用尚未进行 Apple 公证。
+
+## macOS 1.0.5：修复登录后仍无法下载抖音视频
+
+旧版保存 Cookie 后仍调用常规解析，遇到 `blob:` 播放器又无法取得实际视频地址。新版读取网页播放响应、首屏渲染数据和当前播放器组件中的普通媒体地址，并核对当前视频 ID。
+
+使用失败任务的「抖音登录 / 验证后重试」入口，在网页播放目标视频，点击「读取网页视频并下载」，或在出现「使用已识别视频」后直接使用。视频已识别时，保存按钮也会转交网页视频地址；仅保存登录状态时会保留窗口，提示播放视频再读取，避免重复登录重试。
+
+真实示例 `7651105998492519707` 已完成下载：1440 × 1080，H.264 视频与 AAC 音频，时长约 16 分 51 秒，文件 178,809,979 字节。回归检查涵盖真实 WebKit 中的 Fetch、XHR、首屏渲染、播放器组件、相关视频隔离和页面内导航。加密流仍不支持；网页提供的普通媒体地址即使由 `blob:` 播放器使用，也可读取。
 
 ## macOS 1.0.4：抖音分享文案与网页登录
 
@@ -31,7 +39,7 @@
 
 抖音任务旁和偏好设置中新增「抖音登录 / 验证」：在可见的官方网页中手动完成登录或验证，点击「保存状态并重试」。网页登录状态保存在本机 WebKit 中，只有主动保存后才向抖音任务提供 Cookie；可以在设置中清除。应用不代填或记录密码。
 
-若常规解析仍失败，可在官方网页播放目标视频，点击「使用当前视频」。这会使用当前页面可见播放器的 HTTPS 视频地址，绑定当前视频 ID，临时保留 10 分钟；blob、加密流及仅允许在抖音 App 内播放的内容暂不支持。选择网页视频时使用页面提供的单文件，清晰度取决于该播放器。
+若常规解析仍失败，可在官方网页播放目标视频，点击「使用当前视频」。这会使用当前页面可见播放器的 HTTPS 视频地址，绑定当前视频 ID，临时保留 10 分钟；加密流及仅允许在抖音 App 内播放的内容暂不支持；1.0.5 补充了普通媒体的 blob 播放器适配。选择网页视频时使用页面提供的单文件，清晰度取决于该播放器。
 
 检测到缺少新的网页状态或登录要求时，错误弹窗和失败任务会提供登录、验证后重试的入口。临时 Cookie 和视频元数据文件使用私有权限，并在请求结束后删除；不写入任务历史，不用于其他站点。站点风控、账号权限及网络状况仍会影响下载结果。
 
