@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
     @Published var directory: String
     @Published var browser: String { didSet { preferences.set(browser, forKey: "cookieBrowser"); invalidatePreview() } }
     @Published var error: String?
+    @Published private(set) var loginRequiredURL: String?
+    @Published private(set) var douyinSessionSummary: String
     @Published var paths = EnginePaths()
     @Published var selectedSection = "全部任务"
     @Published var search = ""
@@ -27,6 +29,11 @@ final class AppModel: ObservableObject {
     @Published var logs: [UUID: [String]] = [:]
     private var workers: [UUID: EngineProcess] = [:]
     private var inspection: EngineProcess?
+    private var inspectionTask: Task<Void, Never>?
+    private var workerTasks: [UUID: Task<Void, Never>] = [:]
+    private var loginRequiredJob: UUID?
+    private var loginWindow: NSWindow?
+    let douyinSession: DouyinWebSession
     private var inspectionToken = UUID()
     private var inspectedURL: String?
     private let locatePaths: () -> EnginePaths
@@ -47,6 +54,8 @@ final class AppModel: ObservableObject {
          storageDirectory: URL? = nil, preferences: UserDefaults = .standard) {
         self.managedDirectory = managedDirectory; self.locatePaths = locatePaths
         self.preferences = preferences
+        douyinSession = DouyinWebSession(preferences: preferences, isolated: storageDirectory != nil)
+        douyinSessionSummary = preferences.bool(forKey: "douyinWebStateEnabled") ? "已保存本机网页状态，可重新验证或登录" : "尚未保存抖音网页状态"
         paths = locatePaths()
         let support = storageDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Flow")
         historyURL = support.appendingPathComponent("history.json")
@@ -128,7 +137,7 @@ final class AppModel: ObservableObject {
     }
 
     private func invalidatePreview() {
-        inspectionToken = UUID(); inspection?.cancel(); inspection = nil
+        inspectionToken = UUID(); inspection?.cancel(); inspection = nil; inspectionTask?.cancel(); inspectionTask = nil
         inspecting = false; inspectionStartedAt = nil; info = nil; inspectedURL = nil
     }
 
@@ -142,16 +151,20 @@ final class AppModel: ObservableObject {
             inspection?.cancel()
             let process = EngineProcess(), token = UUID(), cookie = browser.isEmpty ? nil : browser
             inspectionToken = token; inspection = process; inspecting = true; inspectionStartedAt = Date(); error = nil; info = nil
-            Task { [self] in
+            loginRequiredURL = nil; loginRequiredJob = nil
+            inspectionTask = Task { [self] in
                 do {
                     guard token == inspectionToken else { return }
                     guard await prepareEngine(), token == inspectionToken else { finishInspection(token); return }
+                    let source = try await DouyinLinkResolver().resolve(url)
+                    let prepared = try await douyinSession.prepare(source)
+                    defer { withExtendedLifetime(prepared) {} }
                     let engine = DownloadEngine(paths: paths)
-                    let result = try await engine.inspect(url, browser: cookie, process: process)
+                    let result = try await engine.inspect(source, browser: cookie, process: process, access: prepared?.access)
                     guard token == inspectionToken else { return }
                     info = result; inspectedURL = url
                 } catch is CancellationError { }
-                catch { if token == inspectionToken { self.error = error.localizedDescription } }
+                catch { if token == inspectionToken { reportFailure(error, url: url) } }
                 finishInspection(token)
             }
         } catch { self.error = error.localizedDescription }
@@ -159,7 +172,7 @@ final class AppModel: ObservableObject {
 
     private func finishInspection(_ token: UUID) {
         guard token == inspectionToken else { return }
-        inspecting = false; inspection = nil; inspectionStartedAt = nil
+        inspecting = false; inspection = nil; inspectionTask = nil; inspectionStartedAt = nil
     }
 
     func add() {
@@ -187,6 +200,57 @@ final class AppModel: ObservableObject {
 
     func cancelNewDownload() { invalidatePreview() }
 
+    private func reportFailure(_ failure: Error, url: String, job: UUID? = nil) {
+        if FailureMessage.needsDouyinLogin(failure.localizedDescription, url: url) || (Input.isDouyin(url) && failure is DouyinLinkError) {
+            loginRequiredURL = url; loginRequiredJob = job
+        }
+        let message = FailureMessage.display(failure.localizedDescription, url: url)
+        if let job { edit(job) { $0.status = .failed; $0.error = message } }
+        else { error = message }
+    }
+
+    func openDouyinLogin(url: String? = nil, retryJob: UUID? = nil) {
+        let pendingJob = retryJob ?? (url == nil ? loginRequiredJob : nil)
+        let input = url ?? loginRequiredURL ?? (try? Input.validatedURL(urlInput)) ?? "https://www.douyin.com/"
+        let source = Input.isDouyin(input) ? input : "https://www.douyin.com/"
+        error = nil
+        if let loginWindow, loginWindow.isVisible { loginWindow.makeKeyAndOrderFront(nil); return }
+        let browser = DouyinBrowser(source: source, session: douyinSession) { [weak self] page, captured in
+            guard let self else { return }
+            self.douyinSessionSummary = "已保存本机网页状态，可重新验证或登录"
+            self.loginRequiredURL = nil; self.loginRequiredJob = nil
+            self.loginWindow?.close(); self.loginWindow = nil
+            Task {
+                if let pendingJob, let job = self.jobs.first(where: { $0.id == pendingJob }) {
+                    let resolved = try? await DouyinLinkResolver().resolve(job.url)
+                    if !captured || Input.videoID(resolved ?? "") == Input.videoID(page) { self.resume(pendingJob); return }
+                }
+                if captured || !(self.urlInput.isEmpty) {
+                    if Input.videoID(page) != nil { self.urlInput = page }
+                    self.invalidatePreview(); self.showingNew = true; self.inspect()
+                } else { self.showNotice("抖音网页状态已保存") }
+            }
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 800), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = "抖音官方网页 · 拾流"; window.isReleasedWhenClosed = false
+        browser.didClose = { [weak self] in self?.loginWindow = nil }
+        window.delegate = browser
+        window.contentView = NSHostingView(rootView: DouyinLoginView(browser: browser) { [weak self, weak browser] in
+            browser?.web.stopLoading(); self?.loginWindow?.close(); self?.loginWindow = nil
+        })
+        window.center(); window.level = .modalPanel; loginWindow = window
+        NSApp.keyWindow?.addChildWindow(window, ordered: .above)
+        NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil); window.orderFrontRegardless()
+    }
+
+    func clearDouyinSession() {
+        loginWindow?.close(); loginWindow = nil
+        Task {
+            await douyinSession.clear(); douyinSessionSummary = "尚未保存抖音网页状态"
+            invalidatePreview(); showNotice("已清除抖音网页状态")
+        }
+    }
+
     private func showNotice(_ message: String) {
         noticeTask?.cancel(); notice = message
         noticeTask = Task {
@@ -210,7 +274,7 @@ final class AppModel: ObservableObject {
 
     func pause(_ id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status.active || jobs[index].status == .queued else { return }
-        jobs[index].status = .paused; jobs[index].speed = ""; jobs[index].eta = ""; workers[id]?.cancel(); persist()
+        jobs[index].status = .paused; jobs[index].speed = ""; jobs[index].eta = ""; workers[id]?.cancel(); workerTasks[id]?.cancel(); persist()
     }
 
     func resume(_ id: UUID) {
@@ -221,7 +285,7 @@ final class AppModel: ObservableObject {
 
     func remove(_ id: UUID) {
         let job = jobs.first { $0.id == id }
-        workers[id]?.cancel(); jobs.removeAll { $0.id == id }; logs[id] = nil; persist()
+        workers[id]?.cancel(); workerTasks[id]?.cancel(); jobs.removeAll { $0.id == id }; logs[id] = nil; persist()
         if workers[id] == nil, let job { cleanPartials(job) }
     }
 
@@ -234,7 +298,7 @@ final class AppModel: ObservableObject {
     func refreshEngine() { confirmedEngine = nil; Task { _ = await prepareEngine() } }
 
     func shutdown() {
-        quitting = true; inspection?.cancel(); preparationTask?.cancel(); queuePreparation?.cancel()
+        quitting = true; inspection?.cancel(); inspectionTask?.cancel(); preparationTask?.cancel(); queuePreparation?.cancel()
         progressSave?.cancel(); progressSave = nil; noticeTask?.cancel()
         for id in Array(workers.keys) { pause(id) }
         persist()
@@ -271,9 +335,13 @@ final class AppModel: ObservableObject {
         while workers.count < 2, let job = jobs.first(where: { $0.status == .queued && workers[$0.id] == nil }) {
             let process = EngineProcess(), engine = DownloadEngine(paths: paths), id = job.id
             workers[id] = process; edit(id) { $0.status = .preparing }
-            Task { [self] in
+            workerTasks[id] = Task { [self] in
                 do {
-                    try await engine.download(job, process: process) { [weak self] event in
+                    let source = try await DouyinLinkResolver().resolve(job.url)
+                    let prepared = try await douyinSession.prepare(source)
+                    defer { withExtendedLifetime(prepared) {} }
+                    var resolved = job; resolved.url = source
+                    try await engine.download(resolved, process: process, access: prepared?.access) { [weak self] event in
                         // Enqueue events serially on the main queue before the completion below.
                         DispatchQueue.main.async { self?.handle(event, id: id) }
                     }
@@ -288,10 +356,10 @@ final class AppModel: ObservableObject {
                 } catch is CancellationError { }
                 catch {
                     if jobs.first(where: { $0.id == id })?.status != .paused {
-                        edit(id) { $0.status = .failed; $0.error = error.localizedDescription }
+                        reportFailure(error, url: job.url, job: id)
                     }
                 }
-                workers[id] = nil
+                workers[id] = nil; workerTasks[id] = nil
                 if jobs.first(where: { $0.id == id }) == nil || jobs.first(where: { $0.id == id })?.status == .completed { cleanPartials(job) }
                 pump()
             }

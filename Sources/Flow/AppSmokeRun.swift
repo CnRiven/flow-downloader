@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 import FlowCore
 
 /// Opt-in UI check with isolated storage and no system executable search paths.
@@ -19,8 +20,8 @@ import FlowCore
             try await Task.sleep(nanoseconds: 100_000_000)
         }
     }
-    private static func capture(_ destination: URL) {
-        guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }),
+    private static func capture(_ destination: URL, window target: NSWindow? = nil) {
+        guard let window = target ?? NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }),
               let view = (window.attachedSheet ?? window).contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: bitmap)
@@ -33,6 +34,33 @@ import FlowCore
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             report["alreadyInstalled"] = model.paths.downloader != nil
             report["isolatedSystemPaths"] = model.paths.ffmpeg == nil && model.paths.runtime == nil
+            if CommandLine.arguments.contains("--smoke-douyin-login") {
+                model.urlInput = "分享文案 # 抖音精选 " + fixture + " 复制此链接，打开抖音观看！"
+                model.showingNew = true
+                let source = try Input.validatedURL(model.urlInput)
+                guard Input.isDouyin(source) else { throw InputError.invalidURL }
+                try await Task.sleep(nanoseconds: 600_000_000)
+                capture(root.appendingPathComponent("douyin-input.png"))
+                model.openDouyinLogin(url: source)
+                guard let window = NSApp.windows.first(where: { $0.title == "抖音官方网页 · 拾流" }),
+                      let host = window.contentView as? NSHostingView<DouyinLoginView> else { throw InputError.processFailed("Login window missing") }
+                try await wait(seconds: 40) { !host.rootView.browser.web.isLoading }
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                capture(root.appendingPathComponent("douyin-login.png"), window: window)
+                let snapshot = try await host.rootView.browser.web.takeSnapshot(configuration: nil)
+                if let tiff = snapshot.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+                   let png = bitmap.representation(using: .png, properties: [:]) { try png.write(to: root.appendingPathComponent("douyin-web.png")) }
+                guard window.isVisible else { throw InputError.processFailed("Login window was hidden behind sheet") }
+                report["loginWindowVisible"] = window.isVisible; report["loginWindowKey"] = window.isKeyWindow
+                report["appActive"] = NSApp.isActive; report["canBecomeKey"] = window.canBecomeKey
+                report["page"] = host.rootView.browser.web.url?.absoluteString ?? ""
+                report["status"] = "passed"
+                guard Input.isDouyin(report["page"] as? String ?? "") else { throw InputError.processFailed("Login left official website") }
+                window.close(); model.showingNew = false
+                let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: root.appendingPathComponent("result.json"), options: .atomic)
+                model.shutdown(); NSApp.terminate(nil); return
+            }
             let previousIDs = Set(model.jobs.map(\.id))
             model.urlInput = fixture; model.showingNew = true
             model.inspect() // This must install a missing engine and then continue the original request.

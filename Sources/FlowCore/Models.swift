@@ -89,22 +89,11 @@ public enum InputError: LocalizedError {
     case invalidURL, missingEngine, processFailed(String), missingOutput
     public var errorDescription: String? {
         switch self {
-        case .invalidURL: return "请粘贴完整的 http:// 或 https:// 视频链接。"
+        case .invalidURL: return "请粘贴视频链接，或包含 http://、https:// 链接的分享文案。"
         case .missingEngine: return "下载引擎尚未就绪，请在应用内重试安装。"
         case .processFailed(let message): return message
         case .missingOutput: return "下载引擎已退出，但没有找到输出文件。请查看任务日志。"
         }
-    }
-}
-
-public enum Input {
-    public static func validatedURL(_ input: String) throws -> String {
-        let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-              let host = url.host, !host.isEmpty, !value.contains(where: { $0.isNewline || $0.isWhitespace }) else {
-            throw InputError.invalidURL
-        }
-        return value
     }
 }
 

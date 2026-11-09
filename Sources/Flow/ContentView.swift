@@ -55,6 +55,7 @@ struct ContentView: View {
             .sheet(isPresented: $model.showingSettings) { SettingsView().environmentObject(model) }
             .sheet(item: $model.logJob) { job in LogView(job: job).environmentObject(model) }
             .alert("需要处理", isPresented: Binding(get: { model.error != nil && !model.showingNew }, set: { if !$0 { model.error = nil } })) {
+                if model.loginRequiredURL != nil { Button("抖音登录 / 验证") { model.openDouyinLogin() } }
                 Button("知道了") { model.error = nil }
             } message: { Text(model.error ?? "") }
     }
@@ -189,7 +190,7 @@ struct ContentView: View {
             Image(systemName: "externaldrive").font(.system(size: 10))
             Text(model.directory).lineLimit(1).truncationMode(.middle)
             Spacer()
-            Text("拾流 1.0.3").tracking(1)
+            Text("拾流 1.0.4").tracking(1)
             Text("·  Powered by yt-dlp")
         }.font(.system(size: 9)).foregroundStyle(Palette.muted).padding(.horizontal, 32).frame(height: 37).overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
     }
@@ -231,6 +232,10 @@ struct JobRow: View {
                     }.font(.system(size: 9, design: .monospaced)).foregroundStyle(Palette.muted)
                 }
                 if let error = job.error { Text(error).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2).textSelection(.enabled) }
+                if job.status == .failed && Input.isDouyin(job.url) {
+                    Button("抖音登录 / 验证后重试") { model.openDouyinLogin(url: job.url, retryJob: job.id) }
+                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.green)
+                }
             }
             Group {
                 if job.status.active || job.status == .queued {
@@ -260,7 +265,7 @@ struct NewDownloadView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("收藏一份新灵感").font(.system(size: 24, weight: .semibold))
-                    Text("粘贴链接，选择你喜欢的保存方式。").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    Text("粘贴链接或整段分享文案，选择保存方式。").font(.system(size: 12)).foregroundStyle(Palette.muted)
                 }; Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Palette.muted) }.buttonStyle(.plain)
             }
@@ -276,6 +281,17 @@ struct NewDownloadView: View {
                 }.buttonStyle(ActionStyle()).disabled(!model.canInspect).accessibilityIdentifier("inspect-button")
             }
             EngineSetupView()
+            if let link = try? Input.validatedURL(model.urlInput), Input.isDouyin(link) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("已识别抖音分享链接", systemImage: "link").font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Button("抖音登录 / 验证") { model.openDouyinLogin(url: link) }.buttonStyle(ActionStyle())
+                    }
+                    Text(model.douyinSessionSummary + "。需要验证时，请在官方网页完成并保存状态。")
+                        .font(.system(size: 10)).foregroundStyle(Palette.muted)
+                }.padding(13).background(Palette.mint.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+            }
             if model.inspecting {
                 HStack(spacing: 7) {
                     Text(model.enginePreparing ? "引擎准备好后自动继续解析" : "正在获取视频信息")
@@ -316,6 +332,7 @@ struct NewDownloadView: View {
         }.padding(30).frame(width: 620).background(Palette.paper).foregroundStyle(Palette.ink)
             .onDisappear { model.cancelNewDownload() }
             .alert("需要处理", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+                if model.loginRequiredURL != nil { Button("抖音登录 / 验证") { model.openDouyinLogin() } }
                 Button("知道了") { model.error = nil }
             } message: { Text(model.error ?? "") }
     }
@@ -350,6 +367,16 @@ struct SettingsView: View {
             Divider()
             VStack(alignment: .leading, spacing: 10) {
                 Text("登录状态").font(.headline)
+                HStack {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("抖音官方网页").font(.system(size: 12, weight: .medium))
+                        Text(model.douyinSessionSummary).font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
+                    Button("登录 / 验证") { model.openDouyinLogin(url: "https://www.douyin.com/") }
+                    Button("清除状态") { model.clearDouyinSession() }
+                }
+                Text("在官方网页手动登录；保存后仅向抖音任务传递 Cookie，可随时清除。其他站点可使用下方浏览器登录状态。").font(.system(size: 11)).foregroundStyle(Palette.muted)
                 Picker("读取浏览器 Cookie", selection: $model.browser) {
                     Text("不读取（默认）").tag("")
                     Text("Safari").tag("safari"); Text("Chrome").tag("chrome")
@@ -357,7 +384,7 @@ struct SettingsView: View {
                 }
                 Text("仅在你选择后，由本机 yt-dlp 读取已登录浏览器的 Cookie。新任务使用此设置；系统可能要求浏览器或钥匙串访问授权。").font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
-            Text("拾流 Flow 1.0.3 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            Text("拾流 Flow 1.0.4 · GPL-3.0-or-later\n下载能力由 yt-dlp 提供，站点适配以引擎实际支持为准。").font(.system(size: 10)).foregroundStyle(Palette.muted)
             HStack { Spacer(); Button("完成") { dismiss() }.buttonStyle(ActionStyle(prominent: true)) }
         }.padding(30).frame(width: 570).background(Palette.paper).foregroundStyle(Palette.ink)
     }

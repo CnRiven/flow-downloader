@@ -1,5 +1,6 @@
 import Foundation
 import FlowCore
+import WebKit
 
 @main @MainActor struct ModelChecks {
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) throws {
@@ -35,6 +36,10 @@ import FlowCore
           last="$arg"
         done
         echo "$mode" >> "$calls"
+        if [ "$last" = 'https://www.douyin.com/video/111' ]; then
+          echo 'ERROR: Fresh cookies are needed' >&2
+          exit 2
+        fi
         if [ "$mode" = inspect ]; then
           /bin/sleep 0.6
           printf '{"title":"%s"}\\n' "$last"
@@ -120,6 +125,35 @@ import FlowCore
         try await wait { !delayed.hasActiveProcesses }
         try expect(delayed.jobs[0].status == .completed && count("download") == 2, "Repeated resume duplicated work")
         print("PASS background engine preparation, pause while waiting and repeated resume")
+        app.showingNew = true; app.urlInput = "分享文案 https://www.douyin.com/video/111 复制打开抖音"; app.inspect()
+        try await wait { !app.inspecting }
+        try expect(app.loginRequiredURL == "https://www.douyin.com/video/111" && app.error?.contains("抖音登录 / 验证") == true, "Fresh cookie failure did not offer native login recovery")
+        print("PASS missing Douyin session produces login recovery for share-text inspection")
+        let session = delayed.douyinSession
+        let cookie = HTTPCookie(properties: [.domain: ".douyin.com", .path: "/", .name: "sessionid", .value: "flow-test-session", .secure: "TRUE"])!
+        let unrelated = HTTPCookie(properties: [.domain: ".example.com", .path: "/", .name: "sessionid", .value: "unrelated-test-session"])!
+        for value in [cookie, unrelated] {
+            await withCheckedContinuation { continuation in session.store.httpCookieStore.setCookie(value) { continuation.resume() } }
+        }
+        try await session.save()
+        let source = "https://www.douyin.com/video/123456789"
+        try session.remember(.init(source: source, url: "https://test.douyinvod.com/video/test.mp4", title: "Selected test video", duration: 12, savedAt: Date()))
+        var prepared: PreparedWebAccess? = try await session.prepare(source)
+        guard let cookieURL = prepared?.access.cookieFile, let infoURL = prepared?.access.infoFile else { throw InputError.processFailed("Saved WebKit state was not exported") }
+        let exported = try String(contentsOf: cookieURL, encoding: .utf8)
+        try expect(exported.contains("flow-test-session") && !exported.contains("unrelated-test-session"), "WebKit cookie export crossed site boundary")
+        let mode = try FileManager.default.attributesOfItem(atPath: cookieURL.path)[.posixPermissions] as? NSNumber
+        try expect(mode?.intValue == 0o600, "Cookie file is not private")
+        try expect(prepared?.access.preview?.title == "Selected test video", "Explicit selected video preview missing")
+        let other = try await session.prepare("https://example.com/video")
+        try expect(other == nil, "Session applied to unrelated download")
+        prepared = nil
+        try expect(!FileManager.default.fileExists(atPath: cookieURL.path) && !FileManager.default.fileExists(atPath: infoURL.path), "Temporary session files survived request cleanup")
+        await session.clear()
+        try expect(!session.enabled, "Clearing WebKit did not revoke engine access")
+        let cleared = try await session.prepare(source)
+        try expect(cleared == nil, "Cleared captured video was still available")
+        print("PASS real isolated WebKit cookie export, explicit video selection, file permissions, cleanup and clearing")
         print("All macOS interaction checks passed.")
     }
 }

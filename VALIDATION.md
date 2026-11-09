@@ -1,6 +1,6 @@
 # 验证记录
 
-最近更新：2026-11-05（Asia/Shanghai）。当前 macOS 为 1.0.3，Android 为 1.0.1。
+最近更新：2026-11-09（Asia/Shanghai）。当前 macOS 为 1.0.4，Android 为 1.0.1。
 
 ## macOS
 
@@ -24,6 +24,15 @@
 
 命令：`bash scripts/build-macos.sh`、`python3 scripts/integration-test.py`、`bash scripts/check-macos-model.sh`、`python3 scripts/macos-smoke-test.py`。
 
+1.0.4 新增验证：
+
+- 用户提供的整段抖音文案提取成功；实际短链接 `eJPm0zOllNw` 解析为标准视频地址，ID 为 `7651105998492519707`。
+- 覆盖分享文案标点、Markdown 包裹、标准地址、`iesdouyin.com` 页面与查询参数，以及外域、带凭据、降级到 HTTP 的跳转和循环跳转拦截。
+- 隔离 WebKit 中写入测试 Cookie，验证仅导出抖音域、文件权限 0600、请求结束清理、清除后撤销访问、当前网页视频绑定及其他站点隔离。
+- 使用真实 yt-dlp 加载选中网页视频的元数据，从本地测试源下载，验证 1080p 上限下未知高度的单文件选择、输出和其他已有下载场景。
+- 实际应用打开官方抖音网页，显示目标视频的官方登录表单，并验证分享输入中的登录入口；网页测试使用非持久、隔离的 WebKit 数据存储。
+- 未使用用户的账号或浏览器 Cookie。真实示例在未登录环境中返回 HTTP 403 / Fresh cookies，已映射为网页登录引导；未宣称完成该视频的登录后下载测试。
+
 ## Android
 
 - JDK 17、Gradle 8.11.1、AGP 8.9.2、Kotlin 2.1.20 构建成功。
@@ -45,7 +54,7 @@
 
 - `dist/拾流.app`
 - `dist/Flow-macOS.zip`
-- `dist/Flow-macOS-1.0.3-arm64.zip`
+- `dist/Flow-macOS-1.0.4-arm64.zip`
 - `dist/Flow-Android-debug.apk`
 - `dist/Flow-Android-1.0.1-debug.apk`（同一份新 APK，保留明确版本名）
 - `dist/Flow-Android-1.0.1.png`（模拟器实际界面）

@@ -7,7 +7,7 @@
 | macOS | SwiftUI 原生桌面应用 | macOS 13+ |
 | Android | Kotlin 原生应用 | Android 10+ |
 
-支持视频解析、画质选择、MP3 提取、下载队列、暂停续传和历史记录。Android 额外支持整段抖音分享文案与官方网页验证。
+支持视频解析、画质选择、MP3 提取、下载队列、暂停续传和历史记录。macOS 和 Android 均支持整段抖音分享文案与官方网页登录 / 验证。
 
 <details>
 <summary>查看 Android 实际界面</summary>
@@ -21,9 +21,19 @@
 | 平台 | 安装包 | 说明 |
 | --- | --- | --- |
 | Android | [下载 1.0.1 APK](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.1/Flow-Android-1.0.1-debug.apk) | Android 10+；测试签名，可覆盖安装之前的测试版 |
-| macOS | [下载 1.0.3 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.3/Flow-macOS-1.0.3-arm64.zip) | Apple Silicon，macOS 13+；缺少 yt-dlp 时自动安装 |
+| macOS | [下载 1.0.4 应用 ZIP](https://github.com/CnRiven/flow-downloader/releases/download/v1.0.4/Flow-macOS-1.0.4-arm64.zip) | Apple Silicon，macOS 13+；缺少 yt-dlp 时自动安装 |
 
-[Mac 1.0.3 发布说明、源码与校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.3) · [Android 1.0.1 发布说明](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。安装包为预览版，macOS 应用尚未进行 Apple 公证。
+[Mac 1.0.4 发布说明、源码与校验值](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.4) · [Android 1.0.1 发布说明](https://github.com/CnRiven/flow-downloader/releases/tag/v1.0.1)。安装包为预览版，macOS 应用尚未进行 Apple 公证。
+
+## macOS 1.0.4：抖音分享文案与网页登录
+
+可粘贴整段「复制此链接，打开抖音」分享文案，应用会提取其中的视频网址，将抖音短链接和 `iesdouyin.com/share/video`、`xg/video`、`modal_id` 页面转换为标准视频地址。
+
+抖音任务旁和偏好设置中新增「抖音登录 / 验证」：在可见的官方网页中手动完成登录或验证，点击「保存状态并重试」。网页登录状态保存在本机 WebKit 中，只有主动保存后才向抖音任务提供 Cookie；可以在设置中清除。应用不代填或记录密码。
+
+若常规解析仍失败，可在官方网页播放目标视频，点击「使用当前视频」。这会使用当前页面可见播放器的 HTTPS 视频地址，绑定当前视频 ID，临时保留 10 分钟；blob、加密流及仅允许在抖音 App 内播放的内容暂不支持。选择网页视频时使用页面提供的单文件，清晰度取决于该播放器。
+
+检测到缺少新的网页状态或登录要求时，错误弹窗和失败任务会提供登录、验证后重试的入口。临时 Cookie 和视频元数据文件使用私有权限，并在请求结束后删除；不写入任务历史，不用于其他站点。站点风控、账号权限及网络状况仍会影响下载结果。
 
 ## macOS 1.0.3：进度与交互优化
 
@@ -77,7 +87,7 @@ macOS 包使用本地临时签名，尚未进行 Apple Developer ID 签名、公
 
 ## 使用方法
 
-1. 粘贴完整的视频链接，点击「解析链接」。也可跳过解析，直接加入队列。
+1. 粘贴视频链接或整段分享文案，点击「解析链接」。也可跳过解析，直接加入队列。
 2. 选择最佳画质、1080p、720p 或 MP3。清晰度是上限，具体取决于视频源；视频容器优先 MP4，必要时使用 MKV。
 3. 加入下载队列，查看进度，暂停或继续。断点续传取决于服务器是否支持以及源链接是否仍有效；某些片段或后处理步骤需要重新开始。
 4. 在已完成任务中打开文件。Mac 可在 Finder 中定位文件。
@@ -90,7 +100,7 @@ macOS 默认保存到 `~/Downloads/拾流`，可更改目录；Android 保存到
 
 站点解析、画质和格式由 yt-dlp 提供，实际可用性还受站点变化、网络、登录状态和视频权限影响。这里没有承诺所有站点、所有链接都能下载，也没有添加 DRM 解密。
 
-Mac 设置中可主动选择从 Safari、Chrome、Firefox 或 Edge 读取登录 Cookie，默认关闭；系统可能要求浏览器、钥匙串或文件访问权限。Cookie 交给本机 yt-dlp，界面不上传或存储 Cookie 文件。已排队任务保留创建时的浏览器选项，修改设置只影响新任务。Android 1.0.1 通过内置的官方抖音网页保存验证 Cookie，保存在应用私有目录，并仅用于抖音请求。
+Mac 设置中可主动选择从 Safari、Chrome、Firefox 或 Edge 读取登录 Cookie，默认关闭；系统可能要求浏览器、钥匙串或文件访问权限。浏览器 Cookie 由本机 yt-dlp 读取，不上传。Mac 1.0.4 的内置抖音网页登录状态保存在本机 WebKit；主动保存后，任务临时 Cookie 文件使用私有权限并在结束后删除。已排队任务保留创建时的浏览器选项，修改设置只影响新任务。Android 1.0.1 通过内置的官方抖音网页保存验证 Cookie，保存在应用私有目录，并仅用于抖音请求。
 
 Mac 在偏好设置中选择「更新 / 修复 yt-dlp」；如果选择维护 Homebrew 安装，也可运行 `brew upgrade yt-dlp`。Android 在设置中选择「更新下载引擎」。原生 Android 运行时、FFmpeg 等组件随 APK 更新。
 

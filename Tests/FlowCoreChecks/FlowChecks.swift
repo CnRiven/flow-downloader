@@ -22,6 +22,7 @@ private final class Events: @unchecked Sendable {
 @main struct FlowChecks {
     static func main() async throws {
         try validationAndArguments(); print("PASS URL validation and argument safety")
+        try await ShareChecks.run()
         try structuredEvents(); print("PASS structured progress and Unicode paths")
         try ProgressChecks.run()
         try historyRecovery(); print("PASS history recovery and corruption handling")
@@ -30,6 +31,7 @@ private final class Events: @unchecked Sendable {
         try await InstallerChecks.run()
         if let url = ProcessInfo.processInfo.environment["FLOW_INTEGRATION_URL"] {
             try await realDownload(url); print("PASS real yt-dlp video download and FFmpeg MP3 conversion")
+            try await selectedWebVideo(url); print("PASS selected webpage metadata download through real yt-dlp")
         }
         if let url = ProcessInfo.processInfo.environment["FLOW_MULTI_TRACK_URL"] {
             try await multiTrackDownload(url); print("PASS real DASH video/audio download, monotonic overall progress and final merge")
@@ -157,5 +159,21 @@ private final class Events: @unchecked Sendable {
         try expect(events.values.filter { $0 == .processing }.count == 1, "Individual track completion was mistaken for merging")
         let path = try unwrap(events.values.compactMap { event -> String? in if case .file(let path) = event { return path }; return nil }.last, "Merged output missing")
         try expect(FileManager.default.fileExists(atPath: path), "Merged file missing")
+    }
+
+    static func selectedWebVideo(_ url: String) async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Flow selected video " + UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = "https://www.douyin.com/video/123456789"
+        let metadata: [String: Any] = ["id": "123456789", "title": "Selected test video", "extractor": "webpage", "webpage_url": source,
+                                      "formats": [["format_id": "web", "url": url, "ext": "mp4", "vcodec": "unknown", "acodec": "unknown"]]]
+        let file = dir.appendingPathComponent("selected.json")
+        try JSONSerialization.data(withJSONObject: metadata).write(to: file)
+        let access = DouyinAccess(source: source, cookieFile: nil, infoFile: file)
+        let events = Events(), job = DownloadJob(url: source, info: nil, quality: .hd1080, directory: dir.path)
+        try await DownloadEngine().download(job, process: EngineProcess(), access: access) { events.append($0) }
+        let output = try unwrap(events.values.compactMap { event -> String? in if case .file(let path) = event { return path }; return nil }.last, "Selected video output missing")
+        try expect(FileManager.default.fileExists(atPath: output), "Selected webpage video was not saved")
     }
 }

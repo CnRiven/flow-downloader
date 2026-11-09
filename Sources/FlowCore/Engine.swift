@@ -136,19 +136,23 @@ public struct DownloadEngine {
     public let paths: EnginePaths
     public init(paths: EnginePaths = EnginePaths()) { self.paths = paths }
 
-    public func commonArguments(browser: String?) -> [String] {
+    public func commonArguments(browser: String?, access: DouyinAccess? = nil, url: String = "") -> [String] {
         var args = ["--ignore-config", "--no-playlist", "--playlist-items", "1", "--no-colors", "--socket-timeout", "30", "--retries", "3"]
         if let ffmpeg = paths.ffmpeg { args += ["--ffmpeg-location", ffmpeg] }
         if let runtime = paths.runtime { args += ["--js-runtimes", "deno:" + runtime] }
-        if let browser, !browser.isEmpty { args += ["--cookies-from-browser", browser] }
+        let scoped = access.flatMap { $0.applies(to: url) ? $0 : nil }
+        if let file = scoped?.cookieFile { args += ["--cookies", file.path] }
+        else if let browser, !browser.isEmpty { args += ["--cookies-from-browser", browser] }
+        if Input.isDouyin(url) { args += ["--user-agent", DouyinAccess.userAgent, "--referer", Input.canonicalize(url)] }
         return args
     }
 
-    public func inspect(_ url: String, browser: String?, process: EngineProcess) async throws -> VideoInfo {
-        let validated = try Input.validatedURL(url)
+    public func inspect(_ url: String, browser: String?, process: EngineProcess, access: DouyinAccess? = nil) async throws -> VideoInfo {
+        let validated = try await DouyinLinkResolver().resolve(url)
+        if let access, access.hasSelectedVideo(for: validated), let preview = access.preview { return preview }
         guard let executable = paths.downloader else { throw InputError.missingEngine }
         let capture = MetadataCapture()
-        let output = try await process.run(executable: executable, arguments: commonArguments(browser: browser) + ["--dump-single-json", "--skip-download", "--", validated], onLine: { capture.accept($0) })
+        let output = try await process.run(executable: executable, arguments: commonArguments(browser: browser, access: access, url: validated) + ["--dump-single-json", "--skip-download", "--", validated], onLine: { capture.accept($0) })
         // Warnings may precede JSON on the shared output pipe.
         guard let data = capture.data() else {
             throw InputError.processFailed("未能读取视频信息。\n" + String(output.suffix(2000)))
@@ -156,10 +160,10 @@ public struct DownloadEngine {
         return try JSONDecoder().decode(VideoInfo.self, from: data)
     }
 
-    public func arguments(for job: DownloadJob) -> [String] {
+    public func arguments(for job: DownloadJob, access: DouyinAccess? = nil) -> [String] {
         // The UUID directory keeps partial files isolated, so retries can safely resume.
         let work = URL(fileURLWithPath: job.directory).appendingPathComponent(".flow-partials/" + job.id.uuidString).path
-        var args = commonArguments(browser: job.cookieBrowser) + [
+        var args = commonArguments(browser: job.cookieBrowser, access: access, url: job.url) + [
             "--newline", "--progress", "--no-simulate", "--continue", "--no-overwrites",
             "--progress-delta", "0.2",
             "--progress-template", "download:FLOW_PROGRESS:{\"format_id\":%(info.format_id|default)j,\"progress\":%(progress)j}",
@@ -167,20 +171,22 @@ public struct DownloadEngine {
             "--print", "post_process:FLOW_PROCESSING:%(id)j",
             "--print", "before_dl:FLOW_TITLE:%(title)j", "--print", "after_move:FLOW_FILE:%(filepath)j",
             "-P", "home:" + job.directory, "-P", "temp:" + work,
-            "-o", "%(title).160B [%(id)s].%(ext)s", "-f", paths.ffmpeg == nil ? job.quality.singleFileFormat : job.quality.format
+            "-o", "%(title).160B [%(id)s].%(ext)s", "-f", paths.ffmpeg == nil || access?.hasSelectedVideo(for: job.url) == true ? job.quality.singleFileFormat : job.quality.format
         ]
         if job.quality == .audio { args += ["-x", "--audio-format", "mp3", "--audio-quality", "0"] }
         else if paths.ffmpeg != nil { args += ["--merge-output-format", "mp4/mkv"] }
-        args += ["--", job.url]
+        if let access, access.hasSelectedVideo(for: job.url), let file = access.infoFile { args += ["--load-info-json", file.path] }
+        else { args += ["--", job.url] }
         return args
     }
 
-    public func download(_ job: DownloadJob, process: EngineProcess, onEvent: @escaping @Sendable (EngineEvent) -> Void) async throws {
-        _ = try Input.validatedURL(job.url)
+    public func download(_ job: DownloadJob, process: EngineProcess, access: DouyinAccess? = nil, onEvent: @escaping @Sendable (EngineEvent) -> Void) async throws {
+        var resolved = job
+        resolved.url = try await DouyinLinkResolver().resolve(job.url)
         guard let executable = paths.downloader else { throw InputError.missingEngine }
         try FileManager.default.createDirectory(atPath: job.directory, withIntermediateDirectories: true)
         let events = DownloadEventStream(previousProgress: job.progress)
-        _ = try await process.run(executable: executable, arguments: arguments(for: job)) { line in
+        _ = try await process.run(executable: executable, arguments: arguments(for: resolved, access: access)) { line in
             if let event = events.consume(line) { onEvent(event) }
         }
     }

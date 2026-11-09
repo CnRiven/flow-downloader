@@ -68,7 +68,7 @@ public struct URLSessionEngineTransport: EngineInstallTransport {
     private func request(_ url: URL) throws -> URLRequest {
         guard Self.isTrusted(url) else { throw EngineInstallError.invalidRelease }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
-        request.setValue("Flow/1.0.3 (macOS)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Flow/1.0.4 (macOS)", forHTTPHeaderField: "User-Agent")
         return request
     }
     private func validate(_ response: URLResponse) throws {
